@@ -30,6 +30,10 @@
           src = craneLib.cleanCargoSource ./.;
           strictDeps = true;
 
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
+
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
