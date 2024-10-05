@@ -20,9 +20,28 @@ pub fn dirwalk(dir: &Path, data: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
+// Instead of passing in a metric butt tonne of stuff, lets yeet it all into a
+// config struct.
+//
+// This is *mostly* the same as the clap struct.
+#[derive(Debug)]
+pub struct Config {
+    pub excludes: Vec<String>,
+}
+
+impl AsRef<Config> for Config {
+    fn as_ref(&self) -> &Config {
+        &self
+    }
+}
+
 // Will be the main entry point for all syncs
 // For now only additive/updates only not handling removals yet
-pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(from: U, to: V) -> Result<(), std::io::Error> {
+pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(
+    from: U,
+    to: V,
+    config: Config,
+) -> Result<(), std::io::Error> {
     let mut stack = Vec::new();
     stack.push(PathBuf::from(from.as_ref()));
 
@@ -78,23 +97,30 @@ pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(from: U, to: V) -> Result<(), std::i
         for entry in fs::read_dir(working_path)? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_dir() {
-                // Cause for now who gives a shit this is only me, test for dir
-                // names I don't want to sync.
 
-                if let Some(basename) = path.as_path().file_name() {
-                    println!("dbg: dirname {:?}", basename);
+            let mut ignore = false;
 
-                    if basename == Path::new("target") {
-                        println!("ignore: target");
-                        continue;
-                    }
-                    if basename == Path::new("result") {
-                        println!("ignore: result");
-                        continue;
+            if let Some(basename) = path.as_path().file_name() {
+                println!("dbg: dirname {:?}", basename);
+
+                for s in &config.excludes {
+                    if let Some(bs) = basename.to_str() {
+                        if bs == s {
+                            if basename.to_str() == Some(s) {
+                                ignore = true;
+                                continue;
+                            }
+                        }
                     }
                 }
+            }
 
+            if ignore {
+                continue;
+            }
+
+            // Only operate on dirs and files, anything else, fifo/etc... is not worth pondering
+            if path.is_dir() {
                 stack.push(path);
             } else {
                 match path.file_name() {

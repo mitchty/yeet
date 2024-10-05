@@ -13,6 +13,7 @@ notify = "6.1.1"
 serde = { version = "1.0.210", features = ["derive"] }
 ssh2 = "0.9.4"
 bincode = "1.3.3"
+clap = { version = "4.5.18", features = ["derive"] }
 
 [lib]
 name = "yeet"
