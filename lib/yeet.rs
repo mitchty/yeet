@@ -1,5 +1,10 @@
+use notify::*;
+
+//use std::error::Error;
+use std::collections::BinaryHeap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 // TODO DFS vs BFS traversal as an option
 
@@ -20,6 +25,31 @@ pub fn dirwalk(dir: &Path, data: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
+struct Task {
+    priority: i32,
+    description: String,
+}
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Task) -> bool {
+        self.priority == other.priority
+    }
+}
+
+impl Eq for Task {}
+
+impl PartialOrd for Task {
+    fn partial_cmp(&self, other: &Task) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Task {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.priority.cmp(&self.priority)
+    }
+}
+
 // Instead of passing in a metric butt tonne of stuff, lets yeet it all into a
 // config struct.
 //
@@ -37,11 +67,7 @@ impl AsRef<Config> for Config {
 
 // Will be the main entry point for all syncs
 // For now only additive/updates only not handling removals yet
-pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(
-    from: U,
-    to: V,
-    config: Config,
-) -> Result<(), std::io::Error> {
+pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(from: U, to: V, config: Config) -> Result<()> {
     let mut stack = Vec::new();
     stack.push(PathBuf::from(from.as_ref()));
 
@@ -142,6 +168,50 @@ pub fn sync<U: AsRef<Path>, V: AsRef<Path>>(
                 }
             }
         }
+    }
+
+    // Once we've synced the upstream start watching for changes via inotify
+
+    // Watching crap
+    let (tx, rx) = std::sync::mpsc::channel();
+    // This example is a little bit misleading as you can just create one Config and use it for all watchers.
+    // That way the pollwatcher specific stuff is still configured, if it should be used.
+    let mut watcher: Box<dyn Watcher> = if RecommendedWatcher::kind() == WatcherKind::PollWatcher {
+        // custom config for PollWatcher kind
+        // you
+        let config = notify::Config::default().with_poll_interval(Duration::from_secs(1));
+        Box::new(PollWatcher::new(tx, config).unwrap())
+    } else {
+        // use default config for everything else
+        Box::new(RecommendedWatcher::new(tx, notify::Config::default()).unwrap())
+    };
+
+    // watch some stuff
+    watcher.watch(src.as_path(), RecursiveMode::Recursive)?;
+
+    // this is the "real" main loop, we record all actions we see and in a
+    // coalesce period do whatever needs to happen
+    for e in rx {
+        println!("{:?}", e);
+    }
+
+    let mut tasks = BinaryHeap::new();
+
+    tasks.push(Task {
+        priority: 3,
+        description: "Low priority task".to_string(),
+    });
+    tasks.push(Task {
+        priority: 1,
+        description: "High priority task".to_string(),
+    });
+
+    while let Some(Task {
+        priority,
+        description,
+    }) = tasks.pop()
+    {
+        println!("Executing task: {}, Priority: {}", description, priority);
     }
 
     Ok(())
