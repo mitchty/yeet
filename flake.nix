@@ -22,12 +22,29 @@
           overlays = [ (import rust-overlay) ];
         };
 
+        inherit (pkgs) lib;
+
         craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.latest.default.override {
           targets = [ "x86_64-unknown-linux-musl" ];
         });
 
-        yeet = craneLib.buildPackage {
-          src = craneLib.cleanCargoSource ./.;
+        src = craneLib.cleanCargoSource ./.;
+
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
+          buildInputs = [ ];
+          # buildInputs = [ ] ++ lib.optionals pkgs.stdenv.isLinux [
+          #   pkgs.mold-wrapped
+          #   pkgs.lld
+          # ];
+          nativeBuildInputs = [ ] ++ lib.optionals pkgs.stdenv.isLinux [
+            pkgs.mold-wrapped
+            pkgs.lld
+          ];
+        };
+
+        yeet = craneLib.buildPackage (commonArgs // {
           strictDeps = true;
 
           OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -36,7 +53,8 @@
 
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-        };
+          RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
+        });
       in
       {
         checks = {

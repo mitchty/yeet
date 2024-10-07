@@ -12,6 +12,14 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     sync: bool,
 
+    // Opt into inotify stuff as well (for now...)
+    #[arg(long, default_value_t = false)]
+    inotify: bool,
+
+    // Opt into task queueing as  well (for now...)
+    #[arg(long, default_value_t = false)]
+    tasks: bool,
+
     // Default is like rsync, sync src -> dir only
     //
     // Plan is to make it bidirectional, not sure what default should be.
@@ -31,14 +39,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let lhs = Path::new(cli.source.as_str());
     let rhs = Path::new(cli.dest.as_str());
 
-    if cli.sync {
-        let conf = yeet::Config {
-            excludes: cli.exclude.clone(),
-        };
-        yeet::sync(lhs, rhs, conf)?;
-    }
+    let conf = yeet::Config {
+        excludes: cli.exclude.clone(),
+        sync: cli.sync,
+        inotify: cli.inotify,
+        tasks: cli.tasks,
+    };
+    yeet::sync(lhs, rhs, conf)?;
 
-    dbg!(cli.sync, cli.exclude, lhs, rhs);
+    //    dbg!(cli.sync, cli.exclude, lhs, rhs);
 
     Ok(())
 }
