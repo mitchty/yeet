@@ -29,9 +29,12 @@ path = "lib/yeet.rs"
 # name = "client"
 # path = "src/client.rs"
 
+# Default is dev profile
 [profile.dev]
 opt-level = 0
 
+# release profile is a for treats thing (takes a while with one codegen unit for
+# lto), opt in and ci can do this on its own dime and time.
 [profile.release]
 codegen-units = 1
 lto = "fat"

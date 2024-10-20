@@ -44,9 +44,7 @@
           ];
         };
 
-        yeet = craneLib.buildPackage (commonArgs // {
-          strictDeps = true;
-
+        staticEnv = {
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
@@ -54,6 +52,18 @@
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
           RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
+        };
+
+        yeet = craneLib.buildPackage (commonArgs // staticEnv // {
+          strictDeps = true;
+
+          CARGO_PROFILE = "dev";
+        });
+
+        yeet-release = craneLib.buildPackage (commonArgs // staticEnv // {
+          strictDeps = true;
+
+          CARGO_PROFILE = "release";
         });
       in
       {
@@ -61,6 +71,9 @@
           inherit yeet;
         };
 
-        packages.default = yeet;
+        packages = {
+          default = yeet;
+          release = yeet-release;
+        };
       });
 }
