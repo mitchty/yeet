@@ -1,5 +1,5 @@
 {
-  description = "Building static binaries with musl";
+  description = "WIP DO NOT USE THIS IS A TOTAL HOLD MY BEER EXPERIMENT";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -14,6 +14,11 @@
     };
   };
 
+  # TODO for now I'm only building static linux binaries thats where I needs
+  # this stuff. I'll be sure it works on macos but I'll save that for later.
+  #
+  # What I want to test is linux specific anyway. When I get a new macbook air I
+  # can put in the effort to port things.
   outputs = { nixpkgs, crane, flake-utils, rust-overlay, ... }:
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
@@ -34,10 +39,6 @@
           inherit src;
           strictDeps = true;
           buildInputs = [ ];
-          # buildInputs = [ ] ++ lib.optionals pkgs.stdenv.isLinux [
-          #   pkgs.mold-wrapped
-          #   pkgs.lld
-          # ];
           nativeBuildInputs = [ ] ++ lib.optionals pkgs.stdenv.isLinux [
             pkgs.mold-wrapped
             pkgs.lld
@@ -55,14 +56,10 @@
         };
 
         yeet = craneLib.buildPackage (commonArgs // staticEnv // {
-          strictDeps = true;
-
           CARGO_PROFILE = "dev";
         });
 
         yeet-release = craneLib.buildPackage (commonArgs // staticEnv // {
-          strictDeps = true;
-
           CARGO_PROFILE = "release";
         });
       in
@@ -74,6 +71,22 @@
         packages = {
           default = yeet;
           release = yeet-release;
+        };
+
+        devShells.default = craneLib.devShell {
+          packages = [
+            (pkgs.writeScriptBin "fmtall" ''
+              taplo fmt
+              cargo fmt
+            '')
+            pkgs.cargo-hakari
+            pkgs.cargo-outdated
+            pkgs.cargo-bloat
+            pkgs.cargo-edit
+            pkgs.cargo-unused-features
+            pkgs.gnumake
+            pkgs.taplo
+          ];
         };
       });
 }
