@@ -1,0 +1,7 @@
+* yeet: sync directory trees across systems
+
+Right now this is a "hold my beer" idea. Do not use this until this readme is updated.
+
+I had a crazy idea and decided to see if I can pull a rabbit out of my butt and make it work.
+
+I repeat: DO NOT USE THIS unless you're crazy like me.
