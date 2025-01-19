@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: open-webui-cli
+          bin: yeet
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           checksum: sha256
