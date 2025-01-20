@@ -12,6 +12,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 So much to do...
 
+## [0.0.1] - 2025-01-20
+
+Just added barebones bevy so I can abuse the ecs there for everything. This version does LESS than the last >.<
+
 ## [0.0.0] - 2025-01-19
 
 Right now the binary only does a one shot copy from source dir to target like rsync only without syncing. Its useless for real world usage right now.

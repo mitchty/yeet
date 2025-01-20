@@ -1,4 +1,6 @@
+use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use clap::Parser;
+use core::time::Duration;
 use std::error::Error;
 use std::path::Path;
 
@@ -31,23 +33,60 @@ struct Cli {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO: integrate env args with yeet::Config at some point
-    //    let args: Vec<String> = env::args().collect();
+    if true {
+        App::new()
+            .add_plugins(DefaultPlugins.set(ScheduleRunnerPlugin::run_once()))
+            .add_systems(Update, hello_world_system)
+            .run();
 
-    let cli = Cli::parse();
+        // This app loops forever at 10 "fps" TODO so if this is my tick count
+        // gotta figure out how to do brute force checking of dir trees for
+        // changes. Need to have a "worst case" fallback if inotify/ebpf no
+        // worky.
+        App::new()
+            .add_plugins(
+                DefaultPlugins
+                    .set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
+                        1.0 / 10.0,
+                    )))
+                    .disable::<LogPlugin>(),
+            )
+            .add_systems(Update, counter)
+            .run();
+    } else {
+        // TODO: integrate env args with yeet::Config at some point
+        //    let args: Vec<String> = env::args().collect();
 
-    let lhs = Path::new(cli.source.as_str());
-    let rhs = Path::new(cli.dest.as_str());
+        let cli = Cli::parse();
 
-    let conf = yeet::Config {
-        excludes: cli.exclude.clone(),
-        sync: cli.sync,
-        inotify: cli.inotify,
-        tasks: cli.tasks,
-    };
-    yeet::sync(lhs, rhs, conf)?;
+        let lhs = Path::new(cli.source.as_str());
+        let rhs = Path::new(cli.dest.as_str());
 
-    //    dbg!(cli.sync, cli.exclude, lhs, rhs);
+        let conf = yeet::Config {
+            excludes: cli.exclude.clone(),
+            sync: cli.sync,
+            inotify: cli.inotify,
+            tasks: cli.tasks,
+        };
+        yeet::sync(lhs, rhs, conf)?;
 
+        //    dbg!(cli.sync, cli.exclude, lhs, rhs);
+    }
     Ok(())
+}
+
+fn hello_world_system() {
+    println!("hello world");
+}
+
+fn counter(mut state: Local<CounterState>) {
+    if state.count % 10 == 0 {
+        println!("{}", state.count);
+    }
+    state.count += 1;
+}
+
+#[derive(Default)]
+struct CounterState {
+    count: u32,
 }

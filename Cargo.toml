@@ -8,13 +8,14 @@ license = "Blue Oak Model License 1.0.0"
 
 [dependencies]
 futures = "0.3.31"
-notify = "6.1.1"
+notify = "8.0.0"
 serde = { version = "1.0.217", features = ["derive"] }
 bincode = "1.3.3"
 clap = { version = "4.5.26", features = ["derive"] }
-thiserror = "1.0.69"
+thiserror = "2.0.11"
 makiko = "0.2.4"
 tokio = { version = "1.43.0", features = ["full"] }
+bevy = { version = "0.15.1", default-features = false, features = ["multi_threaded", "sysinfo_plugin"] }
 
 [lib]
 name = "yeet"
@@ -29,14 +30,31 @@ path = "lib/yeet.rs"
 # name = "client"
 # path = "src/client.rs"
 
-# Default is dev profile
+# Make dev profile fast but chonky boi files opt-level 0 is *slightly* faster,
+# barely but its also murder on cpu caches.
+#
+# Given dev is more for rapid iteration with an eye on not being ass, give it
+# minimal optimization.
 [profile.dev]
-opt-level = 0
-
-# release profile is a for treats thing (takes a while with one codegen unit for
-# lto), opt in and ci can do this on its own dime and time.
-[profile.release]
-codegen-units = 1
-lto = "fat"
 opt-level = "z"
-strip = "symbols"
+
+[profile.dev.build-override]
+opt-level = "z"
+
+[profile.dev.package."*"]
+opt-level = "z"
+
+# All this is great just slow af so turn on when needed.
+[profile.release]
+lto = "fat"
+opt-level = 3
+strip = "debuginfo"
+
+[profile.release.build-override]
+codegen-units = 1
+opt-level = "z"
+
+[profile.release.package."*"]
+codegen-units = 1
+opt-level = "z"
+strip = "debuginfo"
