@@ -21,7 +21,13 @@ uuid = { version = "1.17.0", features = ["fast-rng", "v4"] }
 [dependencies.bevy]
 default-features = false
 # TODO: nuke bevy_log for this? For dev now its fine...
-features = ["async-io", "multi_threaded", "sysinfo_plugin", "bevy_log" ]
+features = [
+  "async-io",
+  "multi_threaded",
+  "sysinfo_plugin",
+  "bevy_log",
+  "async_executor",
+]
 version = "~0.16"
 
 # [lib]
