@@ -67,12 +67,14 @@ impl Ord for Task {
 // config struct.
 //
 // This is *mostly* the same as the clap struct.
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Config {
-    pub excludes: Vec<String>,
+    pub excludes: Vec<String>, // TODO should probably be Arc not Vec, unless I want to change excludes at runtime?
     pub sync: bool,
     pub inotify: bool,
     pub tasks: bool,
+    pub lhs: PathBuf,
+    pub rhs: PathBuf,
 }
 
 impl AsRef<Config> for Config {

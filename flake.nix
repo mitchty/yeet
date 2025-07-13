@@ -20,7 +20,7 @@
   # What I want to test is linux specific anyway. When I get a new macbook air I
   # can put in the effort to port things.
   outputs = { nixpkgs, crane, flake-utils, rust-overlay, ... }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -29,9 +29,9 @@
 
         inherit (pkgs) lib;
 
-        craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.latest.default.override {
+        craneLib = if system == "x86_64-linux" then (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.latest.default.override {
           targets = [ "x86_64-unknown-linux-musl" ];
-        });
+        }) else (crane.mkLib pkgs);
 
         src = craneLib.cleanCargoSource ./.;
 
@@ -49,7 +49,7 @@
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
-
+        } // lib.attrsets.optionalAttrs pkgs.stdenv.isLinux {
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
           RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
@@ -61,6 +61,7 @@
 
         yeet-release = craneLib.buildPackage (commonArgs // staticEnv // {
           CARGO_PROFILE = "release";
+          RUSTFLAGS = "-D warnings";
         });
       in
       {
@@ -79,7 +80,6 @@
               taplo fmt
               cargo fmt
             '')
-            pkgs.cargo-hakari
             pkgs.cargo-outdated
             pkgs.cargo-bloat
             pkgs.cargo-edit
