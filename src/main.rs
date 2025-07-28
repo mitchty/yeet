@@ -6,6 +6,8 @@ use std::error::Error;
 //use std::path::Path;
 use uuid::Uuid;
 
+use lib::*;
+
 // TODO cli module
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -73,22 +75,27 @@ fn main() -> Result<(), Box<dyn Error>> {
 // specifically) to identify a group of directories that should be in sync
 // somehow.
 fn insert_sync(mut _cmd: Commands, config: &SyncDir) {
-    println!(
-        "Sync dir id {} lhs {} to rhs {}",
-        config.id, config.src, config.dst,
+    log::info!(
+        "sync id {} lhs {} to rhs {}",
+        config.id,
+        config.src,
+        config.dst,
     );
 }
 
 fn counter(mut state: Local<CounterState>) {
-    if state.count % 10 == 0 {
-        println!("{}", state.count);
-    }
     state.count += 1;
+
+    if state.count % 30 == 0 {
+        state.stats.update();
+        info!("{}", state.stats);
+    }
 }
 
 #[derive(Default)]
 struct CounterState {
     count: u32,
+    stats: PidStats,
 }
 
 // HERE
