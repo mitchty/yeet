@@ -31,6 +31,9 @@
       let
         pkgs = import inputs.nixpkgs {
           inherit system;
+          overlays = [
+            inputs.fenix.overlays.default
+          ];
         };
 
         treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
@@ -43,20 +46,22 @@
         };
         inherit (pkgs) lib;
 
-        fenixPkgs = inputs.fenix.packages.${system};
-
         # TODO: iff I set this up to run on nixos arm don't be so explicit
-        muslToolchain = [ fenixPkgs.targets.x86_64-unknown-linux-musl.stable.rust-std ];
+        muslToolchain = [ pkgs.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std ];
 
-        commonToolchain = [
-          fenixPkgs.stable.cargo
-          fenixPkgs.stable.clippy
-          fenixPkgs.stable.rustc
-          fenixPkgs.stable.rustfmt
-          fenixPkgs.stable.rust-std
+        commonToolchain = with pkgs; [
+          (fenix.complete.withComponents [
+            "cargo"
+            "clippy"
+            "rust-src"
+            "rustc"
+            "rustfmt"
+          ])
+          rust-analyzer-nightly
         ];
 
-        toolchain = fenixPkgs.combine (commonToolchain ++ lib.optionals pkgs.stdenv.isLinux muslToolchain);
+        toolchain = pkgs.fenix.
+          combine (commonToolchain ++ lib.optionals pkgs.stdenv.isLinux muslToolchain);
 
         craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
 

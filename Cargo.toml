@@ -34,10 +34,6 @@ features = [
 ]
 version = "~0.16"
 
-[lib]
-name = "lib"
-path = "src/pid.rs"
-
 # TODO test out client/server protocol
 # [[bin]]
 # name = "server"
