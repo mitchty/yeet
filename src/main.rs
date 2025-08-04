@@ -95,12 +95,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn setup_sync(mut cmd: Commands, source: &String, dest: &String) -> Result {
     cmd.spawn((
         Logger(bevy::time::Stopwatch::new()),
+        LoggerElapsed(30.0),
         Source(std::path::PathBuf::from(source)),
         Dest(std::path::PathBuf::from(dest)),
     ));
     cmd.spawn((
         Logger(bevy::time::Stopwatch::new()),
+        LoggerElapsed(3.0),
         Updater(bevy::time::Stopwatch::new()),
+        UpdaterElapsed(1.0),
         Stats,
         Start(std::time::Instant::now()),
         Mem(0),
@@ -116,10 +119,19 @@ struct Logger(bevy::time::Stopwatch);
 #[derive(Default, Component)]
 struct Updater(bevy::time::Stopwatch);
 
-fn log_periodic(time: Res<Time>, mut l: Query<(&mut Logger, &Source, &Dest)>) -> Result {
-    let (mut logger, source, dest) = l.single_mut()?;
+#[derive(Default, Component)]
+struct LoggerElapsed(f32);
 
-    if logger.0.elapsed_secs() > 30.0 {
+#[derive(Default, Component)]
+struct UpdaterElapsed(f32);
+
+fn log_periodic(
+    time: Res<Time>,
+    mut l: Query<(&mut Logger, &LoggerElapsed, &Source, &Dest)>,
+) -> Result {
+    let (mut logger, elapsed, source, dest) = l.single_mut()?;
+
+    if logger.0.elapsed_secs() > elapsed.0 {
         logger.0.reset();
         info!("source {} dest {}", source.0.display(), dest.0.display());
     } else {
@@ -130,11 +142,11 @@ fn log_periodic(time: Res<Time>, mut l: Query<(&mut Logger, &Source, &Dest)>) ->
 
 fn log_periodic_stats(
     time: Res<Time>,
-    mut stats: Query<(&mut Logger, &Start, &Mem, &Cpu)>,
+    mut stats: Query<(&mut Logger, &LoggerElapsed, &Start, &Mem, &Cpu)>,
 ) -> Result {
-    let (mut logger, start, mem, cpu) = stats.single_mut()?;
+    let (mut logger, elapsed, start, mem, cpu) = stats.single_mut()?;
 
-    if logger.0.elapsed_secs() > 3.0 {
+    if logger.0.elapsed_secs() > elapsed.0 {
         logger.0.reset();
         info!(
             "up: {} mem: {} cpu: {:.1}%",
@@ -154,11 +166,17 @@ fn log_periodic_stats(
 // Tables for inodes is/n't.
 fn update_stats(
     time: Res<Time>,
-    mut stats: Query<(&mut Updater, &mut Mem, &mut Cpu, &mut System)>,
+    mut stats: Query<(
+        &mut Updater,
+        &UpdaterElapsed,
+        &mut Mem,
+        &mut Cpu,
+        &mut System,
+    )>,
 ) -> Result {
-    let (mut updater, mut mem, mut cpu, mut system) = stats.single_mut()?;
+    let (mut updater, elapsed, mut mem, mut cpu, mut system) = stats.single_mut()?;
 
-    if updater.0.elapsed_secs() > 1.0 {
+    if updater.0.elapsed_secs() > elapsed.0 {
         updater.0.reset();
         system.0.refresh_all();
         if let Some(process) = system.0.process(sysinfo::Pid::from_u32(std::process::id())) {
