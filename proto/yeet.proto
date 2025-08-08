@@ -1,0 +1,14 @@
+syntax = "proto3";
+package yeet;
+
+service Greeter {
+    rpc SayHi (HiRequest) returns (HiReply);
+}
+
+message HiRequest {
+    string name = 1;
+}
+
+message HiReply {
+    string message = 1;
+}

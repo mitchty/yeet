@@ -1,1 +1,16 @@
-# I am unused, here to satisfy treefmt-nix only
+[formatter.nix]
+command = "nixfmt"
+includes = ["*.nix"]
+
+# [formatter.sh]
+# command = "altshfmt"
+# includes = ["*.sh"]
+
+[formatter.rust]
+command = "rustfmt"
+includes = ["*.rs"]
+
+[formatter.taplo]
+command = "taplo"
+options = ["fmt"]
+includes = ["*.toml"]

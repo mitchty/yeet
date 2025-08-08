@@ -1,12 +1,16 @@
-use bevy::app::ScheduleRunnerPlugin;
-use bevy::prelude::*;
-use clap::Parser;
 use core::time::Duration;
 use std::error::Error;
+use std::path::PathBuf;
+
+use bevy::app::ScheduleRunnerPlugin;
+use bevy::prelude::*;
+use bevy_tokio_tasks::{TaskContext, TokioTasksRuntime};
+use clap::{Parser, Subcommand};
+use tonic::transport::Server;
+
+use yeet::{MyGreeter, yeet::greeter_server::GreeterServer};
 //use std::path::Path;
 //use uuid::Uuid;
-
-use std::path::PathBuf;
 
 // Arc and Mutex are for process local shared state
 //
@@ -25,19 +29,38 @@ use std::path::PathBuf;
 //
 //
 
-// TODO cli module
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    #[arg(short, long)]
-    exclude: Vec<String>,
+    #[command(subcommand)]
+    command: SubCommands,
+}
 
-    // TODO: This should be default true but for me for now its opt in
-    #[arg(long, default_value_t = false)]
-    sync: bool,
+#[derive(Subcommand)]
+enum SubCommands {
+    /// Synchronize files between source and destination
+    Sync {
+        /// Exclude paths
+        #[arg(short, long)]
+        exclude: Vec<String>,
 
-    source: String,
-    dest: String,
+        /// This should be default true, but for now it's opt-in
+        #[arg(long, default_value_t = false)]
+        sync: bool,
+
+        /// Source directory
+        source: String,
+
+        /// Destination directory
+        dest: String,
+    },
+
+    /// Start in daemon mode
+    Serve {
+        /// Be verbose or not, doesn't do jack atm
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 // OK need to brain a skosh on how I'll handle syncing across systems in a
@@ -64,6 +87,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let cli = Cli::parse();
 
+    // match cli.command {
+    //     SubCommands::Sync {
+    //         ref exclude,
+    //         ref sync,
+    //         ref source,
+    //         ref dest,
+    //     } => {
+    //         debug!("Syncing from {} to {}", source.clone(), dest.clone());
+    //         debug!("Exclude: {:?}", exclude.clone());
+    //         debug!("Sync flag: {}", sync.clone());
+    //     }
+    //     SubCommands::Serve { ref verbose } => {
+    //         debug!("serving, verbose: {}", verbose);
+    //     }
+    // }
     // This bevy app loops forever at 10 "fps" as its internal event loop
     // conceptually. TODO: is this the right tick frequency or should I make
     // it configurable somehow? gotta figure out how to do brute force checking
@@ -76,29 +114,58 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Whatever future task implement the stupidest idea first for now future me
     // can fix it in post.. sucker.
-    App::new()
+    let mut appbinding = App::new();
+
+    let app = appbinding
         .add_plugins(
             DefaultPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-                1.0 / 10.0,
+                1.0 / 60.0,
             ))),
             //                .disable::<LogPlugin>(),
         )
-        .add_systems(Startup, move |cmd: Commands| {
-            setup_sync(cmd, &cli.source, &cli.dest)
-        })
-        .add_systems(Update, (log_periodic, update_stats, log_periodic_stats))
+        .add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default())
+        .add_systems(Startup, move |cmd: Commands| setup_stats(cmd));
+
+    match cli.command {
+        SubCommands::Sync {
+            exclude: _,
+            sync: _,
+            source,
+            dest,
+        } => {
+            app.add_systems(Startup, move |cmd: Commands| {
+                setup_sync(cmd, &source.as_str(), &dest.as_str())
+            })
+            .add_systems(Update, log_periodic);
+        }
+        SubCommands::Serve { verbose: _ } => {
+            app.add_systems(Startup, server_daemon);
+        }
+    }
+
+    app.add_systems(Update, (update_stats, log_periodic_stats))
         .run();
 
     Ok(())
 }
 
-fn setup_sync(mut cmd: Commands, source: &String, dest: &String) -> Result {
-    cmd.spawn((
-        Logger(bevy::time::Stopwatch::new()),
-        LoggerElapsed(30.0),
-        Source(std::path::PathBuf::from(source)),
-        Dest(std::path::PathBuf::from(dest)),
-    ));
+fn server_daemon(runtime: ResMut<TokioTasksRuntime>) {
+    runtime.spawn_background_task(runserver);
+}
+
+// No mut ctx just yet...
+async fn runserver(_ctx: TaskContext) {
+    let addr = "[::1]:50051".parse().expect("meh");
+    let greeter = MyGreeter::default();
+
+    Server::builder()
+        .add_service(GreeterServer::new(greeter))
+        .serve(addr)
+        .await
+        .expect("wtf");
+}
+
+fn setup_stats(mut cmd: Commands) -> Result {
     cmd.spawn((
         Logger(bevy::time::Stopwatch::new()),
         LoggerElapsed(3.0),
@@ -109,6 +176,16 @@ fn setup_sync(mut cmd: Commands, source: &String, dest: &String) -> Result {
         Mem(0),
         Cpu(0.0),
         System(sysinfo::System::new_all()),
+    ));
+    Ok(())
+}
+
+fn setup_sync(mut cmd: Commands, source: &str, dest: &str) -> Result {
+    cmd.spawn((
+        Logger(bevy::time::Stopwatch::new()),
+        LoggerElapsed(30.0),
+        Source(std::path::PathBuf::from(source)),
+        Dest(std::path::PathBuf::from(dest)),
     ));
     Ok(())
 }

@@ -39,7 +39,7 @@
         treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
-            nixfmt.enable = true;
+            nixpkgs-fmt.enable = true;
             rustfmt.enable = true;
             taplo.enable = true;
           };
@@ -60,8 +60,7 @@
           rust-analyzer-nightly
         ];
 
-        toolchain = pkgs.fenix.
-          combine (commonToolchain ++ lib.optionals pkgs.stdenv.isLinux muslToolchain);
+        toolchain = pkgs.fenix.combine (commonToolchain ++ lib.optionals pkgs.stdenv.isLinux muslToolchain);
 
         craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
 
@@ -81,12 +80,14 @@
 
         staticEnv =
           {
+            PROTOC = "${pkgs.protobuf}/bin/protoc";
+            PROTOC_INCLUDE = "${pkgs.protobuf}/include";
             OPENSSL_DIR = "${pkgs.openssl.dev}";
             OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
             OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
             RUSTFLAGS =
-              "-Aclippy::uninlined_format_args "
-              + lib.optionalString pkgs.stdenv.isLinux "-C link-arg=-fuse-ld=mold ";
+              lib.optionalString pkgs.stdenv.isLinux "-C link-arg=-fuse-ld=mold "
+              + "-Aclippy::uninlined_format_args ";
           }
           // lib.attrsets.optionalAttrs pkgs.stdenv.isLinux {
             CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
@@ -135,6 +136,8 @@
               taplo
               treefmt
               nixfmt-rfc-style
+              protobuf
+              grpcurl
             ]
           );
         };
