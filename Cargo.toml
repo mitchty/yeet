@@ -23,8 +23,8 @@ thiserror = "~2.0.12"
 uuid = { version = "1.17.0", features = ["fast-rng", "v4"] }
 prost = "~0.14"
 tokio = { version = "1.47", features = ["macros", "rt-multi-thread"] }
-tonic = "~0.14.0"
-tonic-prost = "~0.14.0"
+tonic = "~0.14.1"
+tonic-prost = "~0.14.1"
 bevy-tokio-tasks = "~0.16.0"
 tap = "1.0.1"
 
@@ -45,7 +45,7 @@ version = "~0.16"
 
 [lib]
 name = "yeet"
-path = "src/yeet.rs"
+path = "src/lib.rs"
 
 # TODO test out client/server protocol
 # [[bin]]

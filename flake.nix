@@ -47,7 +47,18 @@
         inherit (pkgs) lib;
 
         # TODO: iff I set this up to run on nixos arm don't be so explicit
-        muslToolchain = [ pkgs.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std ];
+        staticToolchain = with pkgs; [
+          (
+            fenix.targets.x86_64-unknown-linux-musl.stable.withComponents [
+              "cargo"
+              "clippy"
+              "rust-src"
+              "rustc"
+              "rustfmt"
+            ]
+            ++ pkgs.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std
+          )
+        ];
 
         commonToolchain = with pkgs; [
           (fenix.complete.withComponents [
@@ -60,16 +71,28 @@
           rust-analyzer-nightly
         ];
 
-        toolchain = pkgs.fenix.combine (commonToolchain ++ lib.optionals pkgs.stdenv.isLinux muslToolchain);
+        toolchain = pkgs.fenix.combine commonToolchain; # (if pkgs.stdenv.isLinux then muslToolchain else commonToolchain);
 
         craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
 
-        src = craneLib.cleanCargoSource ./.;
+        srcRoot = ./.;
+
+        src = lib.fileset.toSource {
+          root = srcRoot;
+          fileset = lib.fileset.unions [
+            (craneLib.fileset.commonCargoSources srcRoot)
+            (lib.fileset.maybeMissing ./proto)
+            (lib.fileset.maybeMissing ./src)
+          ];
+        };
 
         commonArgs = {
           inherit src;
           strictDeps = true;
-          buildInputs = [ ];
+          buildInputs = with pkgs; [
+            protobuf
+            grpcurl
+          ];
           nativeBuildInputs =
             [ ]
             ++ lib.optionals pkgs.stdenv.isLinux [
@@ -139,6 +162,7 @@
               protobuf
               grpcurl
             ]
+            ++ commonArgs.buildInputs
           );
         };
       }

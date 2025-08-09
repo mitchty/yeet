@@ -6,9 +6,9 @@ use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
 use bevy_tokio_tasks::{TaskContext, TokioTasksRuntime};
 use clap::{Parser, Subcommand};
-use tonic::transport::Server;
 
-use yeet::{MyGreeter, yeet::greeter_server::GreeterServer};
+use yeet::systems::stats::*;
+
 //use std::path::Path;
 //use uuid::Uuid;
 
@@ -87,21 +87,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let cli = Cli::parse();
 
-    // match cli.command {
-    //     SubCommands::Sync {
-    //         ref exclude,
-    //         ref sync,
-    //         ref source,
-    //         ref dest,
-    //     } => {
-    //         debug!("Syncing from {} to {}", source.clone(), dest.clone());
-    //         debug!("Exclude: {:?}", exclude.clone());
-    //         debug!("Sync flag: {}", sync.clone());
-    //     }
-    //     SubCommands::Serve { ref verbose } => {
-    //         debug!("serving, verbose: {}", verbose);
-    //     }
-    // }
     // This bevy app loops forever at 10 "fps" as its internal event loop
     // conceptually. TODO: is this the right tick frequency or should I make
     // it configurable somehow? gotta figure out how to do brute force checking
@@ -123,60 +108,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             ))),
             //                .disable::<LogPlugin>(),
         )
-        .add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default())
-        .add_systems(Startup, move |cmd: Commands| setup_stats(cmd));
+        .add_plugins(yeet::systems::stats::Stats);
 
     match cli.command {
         SubCommands::Sync {
-            exclude: _,
-            sync: _,
+            exclude,
+            sync,
             source,
             dest,
         } => {
+            debug!("Syncing from {} to {}", source.clone(), dest.clone());
+            debug!("Exclude: {:?}", exclude.clone());
+            debug!("Sync flag: {}", sync.clone());
+
             app.add_systems(Startup, move |cmd: Commands| {
                 setup_sync(cmd, &source.as_str(), &dest.as_str())
             })
             .add_systems(Update, log_periodic);
         }
-        SubCommands::Serve { verbose: _ } => {
-            app.add_systems(Startup, server_daemon);
+        SubCommands::Serve { verbose } => {
+            debug!("serving, verbose: {}", verbose);
+            app.add_plugins((
+                bevy_tokio_tasks::TokioTasksPlugin::default(),
+                yeet::systems::grpcdaemon::GrpcDaemon,
+            ));
         }
     }
 
-    app.add_systems(Update, (update_stats, log_periodic_stats))
-        .run();
+    app.add_systems(Update, log_periodic_stats).run();
 
-    Ok(())
-}
-
-fn server_daemon(runtime: ResMut<TokioTasksRuntime>) {
-    runtime.spawn_background_task(runserver);
-}
-
-// No mut ctx just yet...
-async fn runserver(_ctx: TaskContext) {
-    let addr = "[::1]:50051".parse().expect("meh");
-    let greeter = MyGreeter::default();
-
-    Server::builder()
-        .add_service(GreeterServer::new(greeter))
-        .serve(addr)
-        .await
-        .expect("wtf");
-}
-
-fn setup_stats(mut cmd: Commands) -> Result {
-    cmd.spawn((
-        Logger(bevy::time::Stopwatch::new()),
-        LoggerElapsed(3.0),
-        Updater(bevy::time::Stopwatch::new()),
-        UpdaterElapsed(1.0),
-        Stats,
-        Start(std::time::Instant::now()),
-        Mem(0),
-        Cpu(0.0),
-        System(sysinfo::System::new_all()),
-    ));
     Ok(())
 }
 
@@ -189,18 +149,6 @@ fn setup_sync(mut cmd: Commands, source: &str, dest: &str) -> Result {
     ));
     Ok(())
 }
-
-#[derive(Default, Component)]
-struct Logger(bevy::time::Stopwatch);
-
-#[derive(Default, Component)]
-struct Updater(bevy::time::Stopwatch);
-
-#[derive(Default, Component)]
-struct LoggerElapsed(f32);
-
-#[derive(Default, Component)]
-struct UpdaterElapsed(f32);
 
 fn log_periodic(
     time: Res<Time>,
@@ -239,49 +187,7 @@ fn log_periodic_stats(
     Ok(())
 }
 
-// Process stats so I can see how bad of an idea yeeting a ton of data in ecs
-// Tables for inodes is/n't.
-fn update_stats(
-    time: Res<Time>,
-    mut stats: Query<(
-        &mut Updater,
-        &UpdaterElapsed,
-        &mut Mem,
-        &mut Cpu,
-        &mut System,
-    )>,
-) -> Result {
-    let (mut updater, elapsed, mut mem, mut cpu, mut system) = stats.single_mut()?;
-
-    if updater.0.elapsed_secs() > elapsed.0 {
-        updater.0.reset();
-        system.0.refresh_all();
-        if let Some(process) = system.0.process(sysinfo::Pid::from_u32(std::process::id())) {
-            *mem = Mem(process.memory() / 1024);
-            *cpu = Cpu(process.cpu_usage());
-        }
-    } else {
-        updater.0.tick(time.delta());
-    }
-    Ok(())
-}
-
 #[derive(Debug, Component)]
 struct Source(pub PathBuf);
 #[derive(Debug, Component)]
 struct Dest(pub PathBuf);
-
-// Can turn stat tracking off/on at runtime in systems.
-#[derive(Debug, Component)]
-struct Stats;
-
-// Process Stats, though I suppose I could record multiple Processes data across
-// systems at some point and sync them every second or so.
-#[derive(Debug, Component)]
-struct Start(std::time::Instant); // Not super precise just whever we get the Instant into the world
-#[derive(Debug, Component)]
-struct Mem(u64);
-#[derive(Debug, Component)]
-struct Cpu(f32);
-#[derive(Debug, Component)]
-struct System(sysinfo::System);
