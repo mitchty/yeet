@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_tokio_tasks::{TaskContext, TokioTasksRuntime};
 use tonic::transport::Server;
 
-use crate::yeet::{yeet::greeter_server::GreeterServer, MyGreeter};
+use crate::yeet::{MyGreeter, yeet::greeter_server::GreeterServer};
 
 pub struct GrpcDaemon;
 

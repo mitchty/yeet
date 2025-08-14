@@ -101,22 +101,21 @@
             ];
         };
 
-        staticEnv =
-          {
-            PROTOC = "${pkgs.protobuf}/bin/protoc";
-            PROTOC_INCLUDE = "${pkgs.protobuf}/include";
-            OPENSSL_DIR = "${pkgs.openssl.dev}";
-            OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
-            OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
-            RUSTFLAGS = "-Aclippy::uninlined_format_args ";
-            # RUSTFLAGS =
-            #   lib.optionalString pkgs.stdenv.isLinux "-C link-arg=-fuse-ld=mold "
-            #   + "-Aclippy::uninlined_format_args ";
-            # }
-            # // lib.attrsets.optionalAttrs pkgs.stdenv.isLinux {
-            #   CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-            #   CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-          };
+        staticEnv = {
+          PROTOC = "${pkgs.protobuf}/bin/protoc";
+          PROTOC_INCLUDE = "${pkgs.protobuf}/include";
+          OPENSSL_DIR = "${pkgs.openssl.dev}";
+          OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
+          OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
+          RUSTFLAGS = "-Aclippy::uninlined_format_args ";
+          # RUSTFLAGS =
+          #   lib.optionalString pkgs.stdenv.isLinux "-C link-arg=-fuse-ld=mold "
+          #   + "-Aclippy::uninlined_format_args ";
+          # }
+          # // lib.attrsets.optionalAttrs pkgs.stdenv.isLinux {
+          #   CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+          #   CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+        };
 
         yeet = craneLib.buildPackage (
           commonArgs
@@ -158,8 +157,10 @@
               cargo-unused-features
               gnumake
               taplo
+              gitFull
               treefmt
               nixfmt-rfc-style
+              nil
               protobuf
               grpcurl
             ]

@@ -100,14 +100,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // can fix it in post.. sucker.
     let mut appbinding = App::new();
 
-    let app = appbinding
-        .add_plugins(
-            DefaultPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-                1.0 / 60.0,
-            ))),
-            //                .disable::<LogPlugin>(),
-        )
-        .add_plugins(yeet::systems::stats::Stats);
+    let app =
+        appbinding
+            .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+                Duration::from_secs_f64(1.0 / 60.0),
+            )))
+            .add_plugins(bevy::log::LogPlugin::default())
+            .add_plugins(yeet::systems::stats::Stats);
+
+    //                .disable::<LogPlugin>(),
 
     match cli.command {
         SubCommands::Sync {
