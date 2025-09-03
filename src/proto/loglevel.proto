@@ -1,0 +1,14 @@
+syntax = "proto3";
+package loglevel;
+
+service LogLevel {
+    rpc GetLevel (LogRequest) returns (LogReply);
+}
+
+message LogRequest {
+    string level = 1;
+}
+
+message LogReply {
+    string level = 1;
+}

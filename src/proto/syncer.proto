@@ -1,0 +1,15 @@
+syntax = "proto3";
+package syncer;
+
+service Syncer {
+  rpc Add (SyncAddRequest) returns (SyncAddReply);
+}
+
+message SyncAddRequest {
+  string lhs = 1;
+  string rhs = 1;
+}
+
+message SyncAddReply {
+  u64 id = 1;
+}

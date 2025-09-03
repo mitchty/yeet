@@ -1,15 +1,13 @@
 use core::time::Duration;
 use std::error::Error;
-use std::path::PathBuf;
 
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
+
+use bevy_cronjob::prelude::*;
 use clap::{Parser, Subcommand};
 
-use yeet::systems::stats::*;
-
-//use std::path::Path;
-//use uuid::Uuid;
+use lib::{Dest, Source};
 
 // Arc and Mutex are for process local shared state
 //
@@ -27,7 +25,6 @@ use yeet::systems::stats::*;
 // ensure things are eventually consistent after a change.
 //
 //
-
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -106,9 +103,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Duration::from_secs_f64(1.0 / 60.0),
             )))
             .add_plugins(bevy::log::LogPlugin::default())
-            .add_plugins(yeet::systems::stats::Stats);
-
-    //                .disable::<LogPlugin>(),
+            .add_plugins(CronJobPlugin)
+            .add_plugins(lib::systems::stats::Stats);
 
     match cli.command {
         SubCommands::Sync {
@@ -123,71 +119,31 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             app.add_systems(Startup, move |cmd: Commands| {
                 setup_sync(cmd, &source.as_str(), &dest.as_str())
-            })
-            .add_systems(Update, log_periodic);
+            });
         }
-        SubCommands::Serve { verbose } => {
-            debug!("serving, verbose: {}", verbose);
+        SubCommands::Serve { verbose: _verbose } => {
+            info!("serving");
+
             app.add_plugins((
+                lib::systems::sys::Sys,
+                lib::systems::syncer::Syncer,
                 bevy_tokio_tasks::TokioTasksPlugin::default(),
-                yeet::systems::grpcdaemon::GrpcDaemon,
+                lib::systems::grpcdaemon::GrpcDaemon,
             ));
         }
     }
 
-    app.add_systems(Update, log_periodic_stats).run();
+    app.run();
 
     Ok(())
 }
 
+// TODO: this needs to be done through rpc calls, though for oneshot syncs I can
+// skip that bit?
 fn setup_sync(mut cmd: Commands, source: &str, dest: &str) -> Result {
     cmd.spawn((
-        Logger(bevy::time::Stopwatch::new()),
-        LoggerElapsed(30.0),
         Source(std::path::PathBuf::from(source)),
         Dest(std::path::PathBuf::from(dest)),
     ));
     Ok(())
 }
-
-fn log_periodic(
-    time: Res<Time>,
-    mut l: Query<(&mut Logger, &LoggerElapsed, &Source, &Dest)>,
-) -> Result {
-    let (mut logger, elapsed, source, dest) = l.single_mut()?;
-
-    if logger.0.elapsed_secs() > elapsed.0 {
-        logger.0.reset();
-        info!("source {} dest {}", source.0.display(), dest.0.display());
-    } else {
-        logger.0.tick(time.delta());
-    }
-    Ok(())
-}
-
-fn log_periodic_stats(
-    time: Res<Time>,
-    mut stats: Query<(&mut Logger, &LoggerElapsed, &Start, &Mem, &Cpu)>,
-) -> Result {
-    let (mut logger, elapsed, start, mem, cpu) = stats.single_mut()?;
-
-    if logger.0.elapsed_secs() > elapsed.0 {
-        logger.0.reset();
-        info!(
-            "up: {} mem: {} cpu: {:.1}%",
-            humantime::format_duration(Duration::from_secs(
-                std::time::Instant::now().duration_since(start.0).as_secs()
-            )),
-            humansize::format_size(mem.0, humansize::BINARY),
-            cpu.0
-        )
-    } else {
-        logger.0.tick(time.delta());
-    }
-    Ok(())
-}
-
-#[derive(Debug, Component)]
-struct Source(pub PathBuf);
-#[derive(Debug, Component)]
-struct Dest(pub PathBuf);

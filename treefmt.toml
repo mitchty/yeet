@@ -15,3 +15,8 @@ includes = ["*.rs"]
 command = "taplo"
 options = ["fmt"]
 includes = ["*.toml"]
+
+[formatter.proto]
+command = "protolint"
+options = ["lint", "-fix"]
+includes = ["*.proto"]

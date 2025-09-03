@@ -11,25 +11,35 @@ license = "Blue Oak Model License 1.0.0"
 # notify = "8.0.0"
 # serde = { version = "1.0.217", features = ["derive"] }
 # bincode = "1.3.3"
-clap = { version = "~4.5.45", features = ["derive"] }
+clap = { version = "~4.5.46", features = ["derive"] }
 humansize = "~2.1.3"
 humantime = "~2.2.0"
 log = "~0.4.27"
 sysinfo = "~0.37.0"
-thiserror = "~2.0.14"
+thiserror = "~2.0.16"
 # makiko = "0.2.4"
 # tokio = { version = "1.43.0", features = ["full"] }
 # aya = { version = "0.13.1", features = ["async_tokio", "tokio"] }
 uuid = { version = "~1.18.0", features = ["fast-rng", "v4"] }
 prost = "~0.14"
-tokio = { version = "~1.47", features = ["macros", "rt-multi-thread"] }
-tonic = "~0.14.1"
+tokio = { version = "~1.47", features = [
+  "macros",
+  "rt-multi-thread",
+  "fs",
+  "sync",
+] }
+tonic = { version = "~0.14.1", features = ["zstd"] }
 tonic-prost = "~0.14.1"
 bevy-tokio-tasks = "~0.16.0"
 tap = "~1.0.1"
+bevy_cronjob = "~0.6.1"
+tonic-reflection = "~0.14.1"
+tokio-stream = { version = "0.1.17", features = ["fs"] }
 
 [build-dependencies]
 tonic-prost-build = "*"
+anyhow = "~1.0.99"
+tonic-build = "~0.14.1"
 
 [dependencies.bevy]
 default-features = false
@@ -44,7 +54,7 @@ features = [
 version = "~0.16"
 
 [lib]
-name = "yeet"
+name = "lib"
 path = "src/lib.rs"
 
 # TODO test out client/server protocol

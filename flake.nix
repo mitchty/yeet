@@ -42,6 +42,7 @@
             nixpkgs-fmt.enable = true;
             rustfmt.enable = true;
             taplo.enable = true;
+            protolint.enable = true;
           };
         };
         inherit (pkgs) lib;
@@ -151,18 +152,19 @@
           packages = (
             with pkgs;
             [
-              cargo-outdated
               cargo-bloat
               cargo-edit
+              cargo-outdated
               cargo-unused-features
-              gnumake
-              taplo
               gitFull
-              treefmt
-              nixfmt-rfc-style
-              nil
-              protobuf
+              grpcui
               grpcurl
+              nil
+              nixfmt-rfc-style
+              protobuf
+              taplo
+              treefmt
+              protolint
             ]
             ++ commonArgs.buildInputs
           );

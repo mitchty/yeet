@@ -5,17 +5,14 @@ use tonic::{
     Status,
 };
 
-use yeet::greeter_server::{
-    Greeter,
-    //    GreeterServer
-};
-use yeet::{HiReply, HiRequest};
+use crate::rpc::greeter::greeter::greeter_server::Greeter;
+use greeter::{HiReply, HiRequest};
 
-pub mod yeet {
-    tonic::include_proto!("yeet");
+pub mod greeter {
+    tonic::include_proto!("greeter");
 }
 
-use bevy::prelude::info;
+use bevy::prelude::debug;
 
 #[derive(Debug, Default)]
 pub struct MyGreeter {}
@@ -23,7 +20,7 @@ pub struct MyGreeter {}
 #[tonic::async_trait]
 impl Greeter for MyGreeter {
     async fn say_hi(&self, request: Request<HiRequest>) -> Result<Response<HiReply>, Status> {
-        info!("Got a request: {:?}", request);
+        debug!("Got a request: {:?}", request);
 
         let reply = HiReply {
             message: format!("Hello {}!", request.into_inner().name),
