@@ -7,12 +7,13 @@
 use std::env;
 use std::path::Path;
 
-use anyhow::Context;
+use eyre::{Result, WrapErr, eyre};
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     //    println!("cargo::rerun-if-changed=src/proto");
     println!("cargo::rerun-if-changed=src/proto");
-    let hack = env::var_os("OUT_DIR").context("`OUT_DIR` env not set")?;
+    let hack = env::var_os("OUT_DIR").ok_or_else(|| eyre!("`OUT_DIR` env not set"))?;
+
     let out_dir = Path::new(&hack);
 
     tonic_prost_build::configure()
@@ -21,7 +22,7 @@ fn main() -> anyhow::Result<()> {
             &["src/proto/greeter.proto", "src/proto/loglevel.proto"],
             &["src/proto"],
         )
-        .context("failed to compile protocol buffers in build.rs")?;
+        .wrap_err("failed to compile protocol buffers in build.rs")?;
 
     Ok(())
 }

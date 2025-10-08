@@ -1,14 +1,22 @@
 syntax = "proto3";
+
 package loglevel;
 
+import "google/protobuf/empty.proto";
+
+enum Level {
+  TRACE = 0;
+  DEBUG = 1;
+  INFO = 2;
+  WARN = 3;
+  ERROR = 4;
+  OFF = 5;
+}
+
+message Request {
+  Level level = 1;
+}
+
 service LogLevel {
-    rpc GetLevel (LogRequest) returns (LogReply);
-}
-
-message LogRequest {
-    string level = 1;
-}
-
-message LogReply {
-    string level = 1;
+  rpc SetLevel(Request) returns (google.protobuf.Empty);
 }

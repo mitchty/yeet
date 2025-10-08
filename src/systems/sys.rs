@@ -24,7 +24,7 @@ fn startup(mut _cmd: Commands) -> Result {
         && let Some(hostname) = sysinfo::System::host_name()
     {
         info!(
-            "sys: cores: {} kernel: {} version: {} name: {} hostname: {}",
+            "cores: {} kernel: {} version: {} name: {} hostname: {}",
             sys.cpus().len(),
             kernel,
             version,
@@ -33,17 +33,17 @@ fn startup(mut _cmd: Commands) -> Result {
         );
     }
     info!(
-        "memory: total: {} used: {}",
-        humansize::format_size(sys.total_memory(), humansize::BINARY),
+        "memory: {}/{}",
         humansize::format_size(sys.used_memory(), humansize::BINARY),
+        humansize::format_size(sys.total_memory(), humansize::BINARY),
     );
 
     // Don't dump out swap column if there is no swap to dump
     if sys.total_swap() > 0 {
         info!(
-            "swap: total: {} used: {}",
-            humansize::format_size(sys.total_swap(), humansize::BINARY),
+            "swap: {}/{}",
             humansize::format_size(sys.used_swap(), humansize::BINARY),
+            humansize::format_size(sys.total_swap(), humansize::BINARY),
         );
     } else {
         debug!("swap: none apparently");

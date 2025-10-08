@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use tonic::{
     //transport::Server,
     Request,
@@ -6,7 +8,7 @@ use tonic::{
 };
 
 use crate::rpc::loglevel::loglevel::log_level_server::LogLevel;
-use loglevel::{LogReply, LogRequest};
+use bevy::prelude::Resource;
 
 pub mod loglevel {
     tonic::include_proto!("loglevel");
@@ -14,18 +16,32 @@ pub mod loglevel {
 
 use bevy::prelude::info;
 
-#[derive(Debug, Default)]
-pub struct MyLogLevel {}
+#[derive(Debug, Clone, Resource)]
+pub struct MyLogLevel {
+    event_sender: Arc<Mutex<tokio::sync::mpsc::UnboundedSender<crate::RpcEvent>>>,
+}
 
+impl MyLogLevel {
+    pub fn new(
+        event_sender: Arc<Mutex<tokio::sync::mpsc::UnboundedSender<crate::RpcEvent>>>,
+    ) -> Self {
+        Self { event_sender }
+    }
+}
+
+// Note: the loglevel rpc/service/whatever avoids the bevy ecs, future me change
+// all of this to Insert an Entity/Component and let logging be an ECS level
+// thing?
 #[tonic::async_trait]
 impl LogLevel for MyLogLevel {
-    async fn get_level(&self, request: Request<LogRequest>) -> Result<Response<LogReply>, Status> {
-        info!("Got a request: {:?}", request);
+    async fn set_level(&self, request: Request<loglevel::Request>) -> Result<Response<()>, Status> {
+        info!("Got a set request: {:?}", request);
 
-        let reply = LogReply {
-            level: format!("Loglevel is {}!", request.into_inner().level),
-        };
+        let s = self.event_sender.lock().unwrap();
+        let newlevel = crate::rpc::loglevel::loglevel::Level::try_from(request.into_inner().level)
+            .unwrap_or(crate::rpc::loglevel::loglevel::Level::Info);
+        let _ = s.send(crate::RpcEvent::LogLevel { level: newlevel });
 
-        Ok(Response::new(reply))
+        Ok(Response::new(()))
     }
 }

@@ -17,6 +17,11 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    omnix = {
+      url = "github:juspay/omnix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # TODO for now I'm only building static linux binaries thats where I needs
@@ -31,6 +36,7 @@
       let
         pkgs = import inputs.nixpkgs {
           inherit system;
+
           overlays = [
             inputs.fenix.overlays.default
           ];
@@ -165,6 +171,7 @@
               taplo
               treefmt
               protolint
+              inputs.omnix.packages.${system}.omnix-cli
             ]
             ++ commonArgs.buildInputs
           );

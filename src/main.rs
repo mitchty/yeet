@@ -3,8 +3,8 @@ use std::error::Error;
 
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
-
 use bevy_cronjob::prelude::*;
+
 use clap::{Parser, Subcommand};
 
 use lib::{Dest, Source};
@@ -23,8 +23,6 @@ use lib::{Dest, Source};
 // That is the primary mutex across things. Only a very select few bevy systems
 // are impacted by this mutex and all of those cause internal event triggers to
 // ensure things are eventually consistent after a change.
-//
-//
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -75,12 +73,9 @@ enum SubCommands {
 // up a sync failure to the user so they can decide what to do.
 // bevy ecs related
 
+use log::Level;
+
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO: integrate env args with yeet::Config at some point
-    //       let args: Vec<String> = env::args().collect();
-
-    //       dbg!(cli.sync, cli.exclude, lhs, rhs);
-
     let cli = Cli::parse();
 
     // This bevy app loops forever at 10 "fps" as its internal event loop
@@ -99,12 +94,22 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let app =
         appbinding
+            .add_plugins(lib::systems::loglevel::LogLevelPlugin {
+                level: Level::Trace,
+            })
             .add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
                 Duration::from_secs_f64(1.0 / 60.0),
             )))
-            .add_plugins(bevy::log::LogPlugin::default())
             .add_plugins(CronJobPlugin)
-            .add_plugins(lib::systems::stats::Stats);
+            .add_plugins(lib::systems::stats::Stats)
+            .add_plugins(bevy::input::InputPlugin)
+            .add_systems(
+                Update,
+                toggle_logging_level_debug, // .run_if(
+                                            //     bevy::input::common_conditions::input_just_pressed(KeyCode::KeyD),
+                                            // ),
+            )
+            .add_plugins(lib::systems::tty::StdinPlugin);
 
     match cli.command {
         SubCommands::Sync {
@@ -122,12 +127,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
         }
         SubCommands::Serve { verbose: _verbose } => {
-            info!("serving");
-
             app.add_plugins((
+                bevy_tokio_tasks::TokioTasksPlugin {
+                    make_runtime: Box::new(|| {
+                        let mut runtime = tokio::runtime::Builder::new_current_thread();
+                        runtime.enable_all();
+                        runtime.build().unwrap()
+                    }),
+                    ..bevy_tokio_tasks::TokioTasksPlugin::default()
+                },
                 lib::systems::sys::Sys,
                 lib::systems::syncer::Syncer,
-                bevy_tokio_tasks::TokioTasksPlugin::default(),
                 lib::systems::grpcdaemon::GrpcDaemon,
             ));
         }
@@ -136,6 +146,56 @@ fn main() -> Result<(), Box<dyn Error>> {
     app.run();
 
     Ok(())
+}
+
+//use bevy::input::keyboard::KeyCode;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
+
+fn toggle_logging_level_debug(
+    log_handle: Res<lib::systems::loglevel::LogHandle>,
+    key: Res<ButtonInput<KeyCode>>,
+    modifiers: Res<ButtonInput<KeyModifiers>>,
+) {
+    let mut change = false;
+    let mut level = "info"; // This is the default
+
+    if key.just_pressed(KeyCode::Char('d')) || key.just_pressed(KeyCode::Char('D')) {
+        change = true; // TODO this is a quick hack future me do it better
+        level = "debug";
+    }
+
+    if key.just_pressed(KeyCode::Char('t')) || key.just_pressed(KeyCode::Char('T')) {
+        change = true; // TODO this is a quick hack future me do it better
+        level = "trace";
+    }
+
+    if key.just_pressed(KeyCode::Char('w')) || key.just_pressed(KeyCode::Char('W')) {
+        change = true; // TODO this is a quick hack future me do it better
+        level = "warn";
+    }
+
+    if key.just_pressed(KeyCode::Char('e')) || key.just_pressed(KeyCode::Char('E')) {
+        change = true; // TODO this is a quick hack future me do it better
+        level = "error";
+    }
+
+    // This comes last so if multiple keys got pressed this "wins" by being last
+    if key.just_pressed(KeyCode::Char('i')) || key.just_pressed(KeyCode::Char('I')) {
+        change = true; // TODO this is a quick hack future me do it better
+        level = "info";
+    }
+
+    if change {
+        eprintln!("log level set to {}\r", level);
+        log_handle
+            .set_max_level(level.to_string())
+            .expect("something wack broke bra");
+    }
+    // if keys.just_pressed(KeyCode::KeyI) {
+    //     log_handle.set_max_level(Level::Info).unwrap();
+    //     trace!("Switched log level to info?");
+    // }
 }
 
 // TODO: this needs to be done through rpc calls, though for oneshot syncs I can
