@@ -2,9 +2,7 @@ use log::Level;
 use std::sync::{Arc, OnceLock};
 
 use bevy::prelude::*;
-use tracing_subscriber::{
-    EnvFilter, Registry, filter::LevelFilter, fmt, prelude::*, reload, reload::Handle,
-};
+use tracing_subscriber::{EnvFilter, Registry, prelude::*, reload, reload::Handle};
 
 static LOG_HANDLE: OnceLock<Arc<Handle<EnvFilter, Registry>>> = OnceLock::new();
 
@@ -43,15 +41,13 @@ impl Plugin for LogLevelPlugin {
         }));
 
         use std::io::{self, Write};
-        use tracing_subscriber::fmt::{Formatter, format::Format};
+        use tracing_subscriber::fmt::format::Format;
 
         let fmt = Format::default();
 
         let _initial_level = self.level;
 
-        let filter = tracing_subscriber::EnvFilter::new("info,lib=info");
-        //        let filter = tracing_subscriber::EnvFilter::from_default_env(); //filter::LevelFilter::WARN;
-        //        let filter = tracing_subscriber::filter::LevelFilter::INFO;
+        let filter = tracing_subscriber::EnvFilter::from_default_env();
         let (filter, reload_handle) = reload::Layer::new(filter);
 
         struct CRLFStdout(io::Stdout);

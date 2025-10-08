@@ -155,7 +155,7 @@ use crossterm::event::KeyModifiers;
 fn toggle_logging_level_debug(
     log_handle: Res<lib::systems::loglevel::LogHandle>,
     key: Res<ButtonInput<KeyCode>>,
-    modifiers: Res<ButtonInput<KeyModifiers>>,
+    _modifiers: Res<ButtonInput<KeyModifiers>>,
 ) {
     let mut change = false;
     let mut level = "info"; // This is the default

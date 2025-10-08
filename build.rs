@@ -11,7 +11,7 @@ use eyre::{Result, WrapErr, eyre};
 
 fn main() -> Result<()> {
     //    println!("cargo::rerun-if-changed=src/proto");
-    println!("cargo::rerun-if-changed=src/proto");
+    println!("cargo::rerun-if-changed=src/proto/*");
     let hack = env::var_os("OUT_DIR").ok_or_else(|| eyre!("`OUT_DIR` env not set"))?;
 
     let out_dir = Path::new(&hack);

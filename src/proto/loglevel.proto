@@ -5,12 +5,12 @@ package loglevel;
 import "google/protobuf/empty.proto";
 
 enum Level {
-  TRACE = 0;
-  DEBUG = 1;
-  INFO = 2;
-  WARN = 3;
-  ERROR = 4;
-  OFF = 5;
+  LEVEL_NONE_UNSPECIFIED = 0;
+  LEVEL_TRACE = 1;
+  LEVEL_DEBUG = 2;
+  LEVEL_INFO = 3;
+  LEVEL_WARN = 4;
+  LEVEL_ERROR = 5;
 }
 
 message Request {
