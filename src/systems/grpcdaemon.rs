@@ -13,10 +13,11 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 // Now takes/handles RpcEvent for both types!
 fn poll_rpc_events(mut event_writer: EventWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
-    let mut r = receiver.0.lock().unwrap(); // TODO unwrap sus...
-    while let Ok(event) = r.try_recv() {
-        debug!("found gprc event {:?}", event);
-        event_writer.write(event);
+    if let Ok(mut r) = receiver.0.lock() {
+        while let Ok(event) = r.try_recv() {
+            debug!("found gprc event {:?}", event);
+            event_writer.write(event);
+        }
     }
 }
 
@@ -66,6 +67,7 @@ pub struct GrpcDaemon;
 // enough).
 impl Plugin for GrpcDaemon {
     fn build(&self, app: &mut App) {
+        use tap::prelude::*;
         // We don't add this ourselves, the caller is responsible for
         // configuring the tokio tasks plugin, if not its a fatal error.
         assert!(app.is_plugin_added::<bevy_tokio_tasks::TokioTasksPlugin>());
@@ -98,7 +100,12 @@ impl Plugin for GrpcDaemon {
         app.add_event::<RpcEvent>()
             .insert_resource(SyncEventReceiver(rx.clone()))
             .insert_resource(SyncEventSender(tx.clone()))
-            .add_systems(Startup, (startup, start_tcp, start_uds).chain())
+            .add_systems(Startup, (startup, start_tcp).chain())
+            .tap_mut(|a| {
+                // Uds support only will exist in unix systems.
+                #[cfg(unix)]
+                a.add_systems(Startup, start_uds.after(startup));
+            })
             .add_systems(
                 Update,
                 (poll_rpc_events, handle_rpc_event.after(poll_rpc_events)),
@@ -116,6 +123,7 @@ fn startup(mut commands: Commands) {
 }
 
 // bevy wrapper system that spawns the async tokio grpc task for listening
+#[cfg(unix)]
 fn start_uds(runtime: ResMut<'_, TokioTasksRuntime>, event_sender: Res<crate::SyncEventSender>) {
     let sender = event_sender.0.clone();
     runtime.spawn_background_task(move |ctx| run_uds(ctx, sender));
@@ -155,7 +163,7 @@ pub struct LogLevelService {}
 async fn run_tcp(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcEvent>>>) {
     use tonic::transport::Server;
 
-    let addr = "[::]:50051".parse().unwrap();
+    let addr = "[::]:50051".parse().expect("this shouldn't fail ever...");
     let event_sender = event_sender.clone();
 
     let greetertcp = MyGreeter::new(event_sender.clone());
@@ -189,14 +197,21 @@ async fn run_tcp(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
     info!("tcp server started");
 }
 
+#[cfg(unix)]
 async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcEvent>>>) {
     use std::os::unix::fs::FileTypeExt;
     use tokio::net::UnixListener;
     use tokio_stream::wrappers::UnixListenerStream;
     use tonic::transport::Server;
 
-    // Sue me, working first ~/.cache/yeet later.
-    let path = std::path::Path::new("/tmp/yeet.uds");
+    extern crate directories;
+    use directories::ProjectDirs;
+
+    let proj_cache = ProjectDirs::from("net", "mitchty", "yeet")
+        .expect("fatal: could not determine project cache dir");
+
+    let path = proj_cache.cache_dir().join("local.uds");
+
     let event_sender = event_sender.clone();
 
     use std::fs;
@@ -206,7 +221,7 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
 
     // Ensure our socket file exists, and is actually a unix domain socket and
     // not a file/dir/fifo whatever the hell might be there instead.
-    if let Ok(metadata) = fs::metadata(path) {
+    if let Ok(metadata) = fs::metadata(&path) {
         if !metadata.file_type().is_socket() {
             error!(
                 "{} exists but is not a Unix Domain Socket file, cannot run until removed",
@@ -214,9 +229,7 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
             );
             std::process::exit(2);
         } else {
-            // TODO: worth keeping, seems useless.
-            //            debug!("removing existing Unix Domain Socket {}", path.display());
-            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(&path);
         }
     } else {
         if let Some(p) = parent
@@ -233,12 +246,9 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
         }
     };
 
-    let uds = UnixListener::bind(path).unwrap_or_else(|e| {
-        error!(
-            "fatal: failed to bind unix socket {}: {}",
-            path.display(),
-            e
-        );
+    let uds = UnixListener::bind(&path).unwrap_or_else(|e| {
+        error!("fatal: failed to bind unix socket {}", &path.display());
+        eprintln!("{:?}", eyre::eyre!(e));
         std::process::exit(2);
     });
 

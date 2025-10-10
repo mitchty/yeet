@@ -53,10 +53,11 @@ fn update(mut stats: Query<(&Start, &mut Mem, &mut Cpu, &mut System)>) -> Result
         .0
         .refresh_memory_specifics(sysinfo::MemoryRefreshKind::nothing().with_ram());
 
-    system.0.refresh_processes(
-        sysinfo::ProcessesToUpdate::Some(&[sysinfo::get_current_pid().unwrap()]),
-        true,
-    );
+    if let Ok(p) = sysinfo::get_current_pid() {
+        system
+            .0
+            .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), true);
+    }
 
     if let Some(process) = system.0.process(sysinfo::Pid::from_u32(std::process::id())) {
         *mem = Mem(process.memory() / 1024);

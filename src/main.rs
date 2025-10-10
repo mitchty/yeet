@@ -132,7 +132,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     make_runtime: Box::new(|| {
                         let mut runtime = tokio::runtime::Builder::new_current_thread();
                         runtime.enable_all();
-                        runtime.build().unwrap()
+                        runtime.build().expect("tokio runtime did not build")
                     }),
                     ..bevy_tokio_tasks::TokioTasksPlugin::default()
                 },
@@ -192,10 +192,6 @@ fn toggle_logging_level_debug(
             .set_max_level(level.to_string())
             .expect("something wack broke bra");
     }
-    // if keys.just_pressed(KeyCode::KeyI) {
-    //     log_handle.set_max_level(Level::Info).unwrap();
-    //     trace!("Switched log level to info?");
-    // }
 }
 
 // TODO: this needs to be done through rpc calls, though for oneshot syncs I can

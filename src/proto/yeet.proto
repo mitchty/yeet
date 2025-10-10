@@ -1,0 +1,15 @@
+syntax = "proto3";
+package syncer;
+
+service Syncer {
+  rpc OneShot (SyncOneShotRequest) returns (SyncOneShotReply);
+}
+
+message SyncOneShotRequest {
+  string lhs = 1;
+  string rhs = 2;
+}
+
+message SyncOneShotReply {
+  uint64 id = 1;
+}

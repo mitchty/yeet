@@ -37,7 +37,10 @@ impl LogLevel for MyLogLevel {
     async fn set_level(&self, request: Request<loglevel::Request>) -> Result<Response<()>, Status> {
         info!("Got a set request: {:?}", request);
 
-        let s = self.event_sender.lock().unwrap();
+        let s = self
+            .event_sender
+            .lock()
+            .expect("could not lock event sender");
         let newlevel = crate::rpc::loglevel::loglevel::Level::try_from(request.into_inner().level)
             .unwrap_or(crate::rpc::loglevel::loglevel::Level::Info);
         let _ = s.send(crate::RpcEvent::LogLevel { level: newlevel });

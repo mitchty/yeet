@@ -34,7 +34,10 @@ impl Greeter for MyGreeter {
 
         let name = request.into_inner().name.clone();
 
-        let s = self.event_sender.lock().unwrap();
+        let s = self
+            .event_sender
+            .lock()
+            .expect("could not lock event sender");
         let _ = s.send(RpcEvent::SpawnSync { name: name.clone() });
 
         let reply = HiReply {

@@ -31,7 +31,8 @@ pub struct LogLevelPlugin {
 impl Plugin for LogLevelPlugin {
     fn build(&self, app: &mut App) {
         // Yeeted from https://werat.dev/blog/pretty-rust-backtraces-in-raw-terminal-mode/ need to brain a more long term approach here.
-        crossterm::terminal::enable_raw_mode().unwrap();
+        crossterm::terminal::enable_raw_mode()
+            .expect("couldn't switch tty to raw mode from cooked");
 
         let default_panic = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
