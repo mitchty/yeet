@@ -12,7 +12,7 @@ use crate::{Dest, RpcEvent, Source, SyncEventReceiver, SyncEventSender};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 // Now takes/handles RpcEvent for both types!
-fn poll_rpc_events(mut event_writer: EventWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
+fn poll_rpc_events(mut event_writer: MessageWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
     if let Ok(mut r) = receiver.0.lock() {
         while let Ok(event) = r.try_recv() {
             debug!("found gprc event {:?}", event);
@@ -23,7 +23,7 @@ fn poll_rpc_events(mut event_writer: EventWriter<RpcEvent>, receiver: Res<SyncEv
 
 fn handle_rpc_event(
     mut commands: Commands,
-    mut events: EventReader<RpcEvent>,
+    mut events: MessageReader<RpcEvent>,
     log_handle: Option<Res<crate::systems::loglevel::LogHandle>>,
 ) {
     for event in events.read() {
@@ -97,10 +97,10 @@ impl Plugin for GrpcDaemon {
         let tx = Arc::new(Mutex::new(tx)); // shareable by gRPC threads
         let rx = Arc::new(Mutex::new(rx)); // Bevy reads from this
 
-        app.add_event::<RpcEvent>()
+        app.add_message::<RpcEvent>()
             .insert_resource(SyncEventReceiver(rx.clone()))
             .insert_resource(SyncEventSender(tx.clone()))
-            .add_systems(Startup, (startup, start_tcp).chain())
+            .add_systems(Startup, (startup, start_tcp.after(startup)))
             .tap_mut(|a| {
                 // Uds support only will exist in unix systems.
                 #[cfg(unix)]

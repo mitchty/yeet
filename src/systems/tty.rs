@@ -28,7 +28,7 @@ impl Drop for StdinPlugin {
     }
 }
 
-#[derive(Event, Deref)]
+#[derive(Message, Deref)]
 struct StdinEvent(KeyEvent);
 
 #[derive(Resource, Deref)]
@@ -94,7 +94,7 @@ fn read_stream(
 fn ctrl_c(
     key: Res<ButtonInput<KeyCode>>,
     modifier: Res<ButtonInput<KeyModifiers>>,
-    mut ev_exit: EventWriter<AppExit>,
+    mut ev_exit: MessageWriter<AppExit>,
 ) {
     if modifier.just_pressed(KeyModifiers::CONTROL) && key.just_pressed(KeyCode::Char('c')) {
         ev_exit.write(AppExit::Success);

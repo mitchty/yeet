@@ -18,7 +18,7 @@ pub struct Source(pub PathBuf);
 #[derive(Debug, Default, Component, Deref)]
 pub struct Dest(pub PathBuf);
 
-#[derive(Debug, Clone, Event)]
+#[derive(Debug, Clone, Event, Message)]
 pub enum RpcEvent {
     SpawnSync {
         name: String,
