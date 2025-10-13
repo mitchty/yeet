@@ -11,13 +11,10 @@ impl Plugin for Sys {
 // System for Dumping out system/build info
 // Also dump out more info about the os we're run upon.
 fn startup(mut _cmd: Commands) -> Result {
-    if cfg!(debug_assertions) {
-        info!("debug build");
-    } else {
-        debug!("release build");
-    }
     let mut sys = sysinfo::System::new_all();
+
     sys.refresh_all();
+
     if let Some(kernel) = sysinfo::System::kernel_version()
         && let Some(version) = sysinfo::System::os_version()
         && let Some(name) = sysinfo::System::name()

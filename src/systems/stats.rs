@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use core::time::Duration;
+use std::sync::Once;
 
 use bevy_cronjob::prelude::*;
 
@@ -53,25 +54,51 @@ fn update(mut stats: Query<(&Start, &mut Mem, &mut Cpu, &mut System)>) -> Result
         .0
         .refresh_memory_specifics(sysinfo::MemoryRefreshKind::nothing().with_ram());
 
+    // TODO how is sysinfo returning bad data on macos all the sudden? Future winter debug task.
+    let mut sus = false;
+
     if let Ok(p) = sysinfo::get_current_pid() {
         system
             .0
             .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), true);
+    } else {
+        sus = true;
+        static WARN_PID_ONCE: Once = Once::new();
+        WARN_PID_ONCE.call_once(|| {
+            warn!("might be bug in sysinfo crate? could not determine current pid, stats are sus");
+        });
     }
 
     if let Some(process) = system.0.process(sysinfo::Pid::from_u32(std::process::id())) {
         *mem = Mem(process.memory() / 1024);
         *cpu = Cpu(process.cpu_usage());
+    } else {
+        sus = true;
+        static WARN_PROCESS_ONCE: Once = Once::new();
+        WARN_PROCESS_ONCE.call_once(|| {
+            warn!(
+                "might be bug in sysinfo crate? could not get process details for cpu and memory pid data, all data returned will be sus"
+            );
+        });
     }
 
-    debug!(
-        "up: {} mem: {} cpu: {:.1}%",
-        humantime::format_duration(Duration::from_secs(
-            std::time::Instant::now().duration_since(**start).as_secs()
-        )),
-        humansize::format_size(**mem, humansize::BINARY),
-        **cpu
-    );
+    if sus {
+        debug!(
+            "up: {} mem/cpu sus",
+            humantime::format_duration(Duration::from_secs(
+                std::time::Instant::now().duration_since(**start).as_secs()
+            ))
+        );
+    } else {
+        debug!(
+            "up: {} mem: {} cpu: {:.1}%",
+            humantime::format_duration(Duration::from_secs(
+                std::time::Instant::now().duration_since(**start).as_secs()
+            )),
+            humansize::format_size(**mem, humansize::BINARY),
+            **cpu
+        );
+    }
     Ok(())
 }
 

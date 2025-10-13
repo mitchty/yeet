@@ -84,6 +84,8 @@
 
         srcRoot = ./.;
 
+        version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
+
         src = lib.fileset.toSource {
           root = srcRoot;
           fileset = lib.fileset.unions [
@@ -100,15 +102,17 @@
             protobuf
             grpcurl
           ];
-          nativeBuildInputs =
-            [ ]
-            ++ lib.optionals pkgs.stdenv.isLinux [
-              pkgs.mold-wrapped
-              pkgs.lld
-            ];
+          nativeBuildInputs = [
+            pkgs.git
+          ]
+          ++ lib.optionals pkgs.stdenv.isLinux [
+            pkgs.mold-wrapped
+            pkgs.lld
+          ];
         };
 
         staticEnv = {
+          STUPIDNIXFLAKEHACK = version;
           PROTOC = "${pkgs.protobuf}/bin/protoc";
           PROTOC_INCLUDE = "${pkgs.protobuf}/include";
           OPENSSL_DIR = "${pkgs.openssl.dev}";
@@ -126,6 +130,9 @@
 
         yeet = craneLib.buildPackage (
           commonArgs
+          // {
+            inherit version;
+          }
           // staticEnv
           // {
             CARGO_PROFILE = "dev";
@@ -134,6 +141,9 @@
 
         yeet-release = craneLib.buildPackage (
           commonArgs
+          // {
+            inherit version;
+          }
           // staticEnv
           // {
             CARGO_PROFILE = "release";

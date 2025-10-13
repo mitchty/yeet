@@ -1,9 +1,18 @@
 use bevy::prelude::*;
 use bevy_cronjob::prelude::*;
 
-use crate::{Dest, Source};
+use crate::{Dest, OneShot, Source, SyncComplete, Uuid};
 
 pub struct Syncer;
+
+// We'll start out abusing the builtin bevy IoTaskPool, bevy tokio tasks is ok
+// but I was only wanting to use it for a grpc<->bevy bridge where it makes
+// sense.
+//
+// But it might make sense to use that for bridging events from
+// epoll()/ionotify/ebpf in future too.
+#[derive(Component)]
+struct SyncTask(bevy::tasks::Task<Result<(), String>>);
 
 // The plugin/system that handles syncs from the top level
 //
@@ -40,7 +49,14 @@ impl Plugin for Syncer {
         // configuring the the cronjob plugin as its shared across Plugins
         assert!(app.is_plugin_added::<bevy_cronjob::CronJobPlugin>());
 
-        app.add_systems(Update, update.run_if(schedule_passed("every 11 seconds")));
+        app.add_systems(Update, update.run_if(schedule_passed("every second")));
+        app.add_systems(
+            Update,
+            (
+                spawn_sync_tasks,
+                check_sync_completion.after(spawn_sync_tasks),
+            ),
+        );
 
         // Dump out I'm idle bra every 60 seconds or so
         app.add_systems(
@@ -61,20 +77,91 @@ fn update_idle(_: Query<(), (Without<Source>, Without<Dest>)>) -> Result {
 
 // Dump out anything that is actively syncing (or just was and isn't updated in
 // this tick) when run.
-fn update(mut query: Query<(&Source, &Dest)>) -> Result {
-    for (lhs, rhs) in &mut query {
-        info!("syncing source {} dest {}", lhs.display(), rhs.display());
+//
+// Note, for now we'll only deal with things with a OneShot marker
+fn update(
+    mut _commands: Commands,
+    query: Query<(Entity, &Source, &Dest, &Uuid, &OneShot), Without<SyncComplete>>,
+) -> Result {
+    for (_entity, lhs, rhs, uuid, _os) in &query {
+        info!(
+            "oneshot sync {}->{} uuid {}",
+            lhs.display(),
+            rhs.display(),
+            uuid::Uuid::from_u128(uuid.0)
+        );
+
+        //        commands.entity(entity).insert(SyncComplete);
     }
     Ok(())
 }
 
-// Enum to encompass the idea of a "oneshot" (aka once) sync from lhs -> rhs,
-// Or a constant sync from lhs -> rhs
-// Or a constant sync from/to lhs <-> rhs
-#[derive(Default, Debug, Component)]
-pub enum Method {
-    OneWay,
-    TwoWay,
-    #[default]
-    OneShot,
+// Go away clippy its not a problem, I know its complex its just a lot of crap and how bevy works.
+#[allow(clippy::type_complexity)]
+fn spawn_sync_tasks(
+    mut commands: Commands,
+    query: Query<(Entity, &Source, &Dest, &OneShot), (Without<SyncTask>, Without<SyncComplete>)>,
+) -> Result {
+    let task_pool = bevy::tasks::IoTaskPool::get();
+
+    for (entity, source, dest, _ignored) in &query {
+        let source = source.0.clone();
+        let dest = dest.0.clone();
+
+        // Oneshot is a glorified cp for now.
+        info!(
+            "spawning oneshot sync task {} -> {}",
+            source.display(),
+            dest.display()
+        );
+
+        let task = task_pool.spawn(async move { oneshot(source, dest).await });
+
+        commands.entity(entity).insert(SyncTask(task));
+    }
+    Ok(())
+}
+
+fn check_sync_completion(
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut SyncTask)>,
+) -> Result {
+    for (entity, mut sync_task) in &mut query {
+        if let Some(result) =
+            futures_lite::future::block_on(futures_lite::future::poll_once(&mut sync_task.0))
+        {
+            match result {
+                Ok(_) => {
+                    info!("sync completed for entity {:?}", entity);
+                    commands
+                        .entity(entity)
+                        .remove::<SyncTask>()
+                        .insert(SyncComplete);
+                }
+                Err(e) => {
+                    error!("sync failed for entity {:?}: {}", entity, e);
+                    commands.entity(entity).remove::<SyncTask>();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn oneshot(source: std::path::PathBuf, dest: std::path::PathBuf) -> Result<(), String> {
+    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+
+    let entries = std::fs::read_dir(&source).map_err(|e| e.to_string())?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+
+        if path.is_file() {
+            let dest_path = dest.join(entry.file_name());
+            std::fs::copy(&path, &dest_path).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
 }

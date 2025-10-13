@@ -9,6 +9,13 @@ use clap::{Parser, Subcommand};
 
 use lib::{Dest, Source};
 
+const VERSTR: &str = const_format::formatcp!(
+    "{} {} {}",
+    env!("CARGO_PKG_VERSION"),
+    env!("STUPIDNIXFLAKEHACK"),
+    env!("BUILD_CARGO_PROFILE")
+);
+
 // Arc and Mutex are for process local shared state
 //
 // This is mostly confined to Config level things that don't change often at
@@ -24,7 +31,7 @@ use lib::{Dest, Source};
 // are impacted by this mutex and all of those cause internal event triggers to
 // ensure things are eventually consistent after a change.
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about = None, long_version = VERSTR)]
 struct Cli {
     #[command(subcommand)]
     command: SubCommands,
@@ -105,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .add_plugins(bevy::input::InputPlugin)
             .add_systems(
                 Update,
-                toggle_logging_level_debug, // .run_if(
+                toggle_logging_level_debug, // .run_if( TODO: bridge stdin into bevy::input conditions so this will work?
                                             //     bevy::input::common_conditions::input_just_pressed(KeyCode::KeyD),
                                             // ),
             )
@@ -123,7 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             debug!("Sync flag: {}", sync.clone());
 
             app.add_systems(Startup, move |cmd: Commands| {
-                setup_sync(cmd, &source.as_str(), &dest.as_str())
+                setup_sync(cmd, source.as_str(), dest.as_str())
             });
         }
         SubCommands::Serve { verbose: _verbose } => {
@@ -137,6 +144,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ..bevy_tokio_tasks::TokioTasksPlugin::default()
                 },
                 lib::systems::sys::Sys,
+                lib::systems::build::Build,
                 lib::systems::syncer::Syncer,
                 lib::systems::grpcdaemon::GrpcDaemon,
             ));
@@ -152,6 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
 
+// TODO: This is a bit of a hack, should maybe make this a cargo feature.
 fn toggle_logging_level_debug(
     log_handle: Res<lib::systems::loglevel::LogHandle>,
     key: Res<ButtonInput<KeyCode>>,
@@ -161,28 +170,28 @@ fn toggle_logging_level_debug(
     let mut level = "info"; // This is the default
 
     if key.just_pressed(KeyCode::Char('d')) || key.just_pressed(KeyCode::Char('D')) {
-        change = true; // TODO this is a quick hack future me do it better
+        change = true;
         level = "debug";
     }
 
     if key.just_pressed(KeyCode::Char('t')) || key.just_pressed(KeyCode::Char('T')) {
-        change = true; // TODO this is a quick hack future me do it better
+        change = true;
         level = "trace";
     }
 
     if key.just_pressed(KeyCode::Char('w')) || key.just_pressed(KeyCode::Char('W')) {
-        change = true; // TODO this is a quick hack future me do it better
+        change = true;
         level = "warn";
     }
 
     if key.just_pressed(KeyCode::Char('e')) || key.just_pressed(KeyCode::Char('E')) {
-        change = true; // TODO this is a quick hack future me do it better
+        change = true;
         level = "error";
     }
 
     // This comes last so if multiple keys got pressed this "wins" by being last
     if key.just_pressed(KeyCode::Char('i')) || key.just_pressed(KeyCode::Char('I')) {
-        change = true; // TODO this is a quick hack future me do it better
+        change = true;
         level = "info";
     }
 
@@ -194,8 +203,7 @@ fn toggle_logging_level_debug(
     }
 }
 
-// TODO: this needs to be done through rpc calls, though for oneshot syncs I can
-// skip that bit?
+// TODO: removeme, make a oneshot cli command that sends an rpc for now.
 fn setup_sync(mut cmd: Commands, source: &str, dest: &str) -> Result {
     cmd.spawn((
         Source(std::path::PathBuf::from(source)),

@@ -1,2 +1,2 @@
-pub mod greeter;
 pub mod loglevel;
+pub mod yeet;

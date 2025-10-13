@@ -4,14 +4,14 @@ use bevy::prelude::*;
 use bevy_tokio_tasks::{TaskContext, TokioTasksRuntime};
 
 use crate::rpc::{
-    greeter::{MyGreeter, greeter::greeter_server::GreeterServer},
-    loglevel::{MyLogLevel, loglevel::log_level_server::LogLevelServer},
+    loglevel::{MyLogLevel, log_level_server::LogLevelServer},
+    yeet::{MyYeet, yeet_server::YeetServer},
 };
-use crate::{Dest, RpcEvent, Source, SyncEventReceiver, SyncEventSender};
+use crate::{Dest, OneShot, RpcEvent, Source, SyncEventReceiver, SyncEventSender, Uuid};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-// Now takes/handles RpcEvent for both types!
+// Poll for grpc events on the mpsc channel first.
 fn poll_rpc_events(mut event_writer: MessageWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
     if let Ok(mut r) = receiver.0.lock() {
         while let Ok(event) = r.try_recv() {
@@ -21,30 +21,38 @@ fn poll_rpc_events(mut event_writer: MessageWriter<RpcEvent>, receiver: Res<Sync
     }
 }
 
+// This always runs after ^^^ to minimize the ecs seeing components between ticks.
 fn handle_rpc_event(
     mut commands: Commands,
     mut events: MessageReader<RpcEvent>,
     log_handle: Option<Res<crate::systems::loglevel::LogHandle>>,
 ) {
+    use crate::rpc::loglevel::Level;
+
     for event in events.read() {
         match event {
-            RpcEvent::SpawnSync { name } => {
-                debug!("spawning bevy event: {:?}", event);
+            RpcEvent::OneshotSync { lhs, rhs, uuid } => {
+                debug!(
+                    "got a one shot sync request lhs {lhs}, rhs {rhs}, uuid {uuid} {}",
+                    uuid::Uuid::from_u128(*uuid)
+                );
                 commands.spawn((
-                    Source(std::path::PathBuf::from(name)),
-                    Dest(std::path::PathBuf::from(name)), // MVP: same path for dest
+                    Source(std::path::PathBuf::from(lhs)),
+                    Dest(std::path::PathBuf::from(rhs)),
+                    Uuid(*uuid),
+                    OneShot {},
                 ));
             }
             RpcEvent::LogLevel { level } => {
                 debug!("handling loglevel event: {:?}", level);
                 if let Some(ref handle) = log_handle {
                     let set_level = match *level {
-                        crate::rpc::loglevel::loglevel::Level::Trace => "trace",
-                        crate::rpc::loglevel::loglevel::Level::Debug => "debug",
-                        crate::rpc::loglevel::loglevel::Level::Info => "info",
-                        crate::rpc::loglevel::loglevel::Level::Warn => "warn",
-                        crate::rpc::loglevel::loglevel::Level::Error => "error",
-                        crate::rpc::loglevel::loglevel::Level::NoneUnspecified => "info",
+                        Level::Trace => "trace",
+                        Level::Debug => "debug",
+                        Level::Info => "info",
+                        Level::Warn => "warn",
+                        Level::Error => "error",
+                        Level::NoneUnspecified => "info",
                     };
                     let _ = handle.set_max_level(String::from(set_level));
                 }
@@ -144,8 +152,8 @@ fn start_tcp(runtime: ResMut<'_, TokioTasksRuntime>, event_sender: Res<crate::Sy
 // I like domain sockets as then I could skip a bit of logic around local
 // authentication, if the local system is compromised its game off anyway.
 pub mod proto {
-    tonic::include_proto!("greeter");
     tonic::include_proto!("loglevel");
+    tonic::include_proto!("yeet");
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("reflection");
 }
@@ -166,9 +174,9 @@ async fn run_tcp(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
     let addr = "[::]:50051".parse().expect("this shouldn't fail ever...");
     let event_sender = event_sender.clone();
 
-    let greetertcp = MyGreeter::new(event_sender.clone());
-    let logleveltcp = MyLogLevel::new(event_sender.clone());
-    let reflectiontcp = match tonic_reflection::server::Builder::configure()
+    let loglevel = MyLogLevel::new(event_sender.clone());
+    let yeet = MyYeet::new(event_sender.clone());
+    let reflection = match tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
         .build_v1()
     {
@@ -182,9 +190,9 @@ async fn run_tcp(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
 
     // TODO make uds/tcp not WET this? I don't think I need this too often copy/pasta is ok for now.
     let tcp_server = Server::builder()
-        .add_service(GreeterServer::new(greetertcp))
-        .add_service(LogLevelServer::new(logleveltcp))
-        .add_service(reflectiontcp)
+        .add_service(LogLevelServer::new(loglevel))
+        .add_service(YeetServer::new(yeet))
+        .add_service(reflection)
         .serve(addr);
 
     // Bail if we can't bind to the socket
@@ -231,19 +239,17 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
         } else {
             let _ = std::fs::remove_file(&path);
         }
+    } else if let Some(p) = parent
+        && let Ok(_parentage) = std::fs::create_dir_all(p)
+    {
+        debug!(
+            "created parentage {} Unix Domain Socket {}",
+            p.display(),
+            path.display()
+        );
     } else {
-        if let Some(p) = parent
-            && let Ok(_parentage) = std::fs::create_dir_all(p)
-        {
-            debug!(
-                "created parentage {} Unix Domain Socket {}",
-                p.display(),
-                path.display()
-            );
-        } else {
-            error!("fatal: couldn't create parent path for {}", path.display());
-            std::process::exit(2);
-        }
+        error!("fatal: couldn't create parent path for {}", path.display());
+        std::process::exit(2);
     };
 
     let uds = UnixListener::bind(&path).unwrap_or_else(|e| {
@@ -254,8 +260,8 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
 
     let addr_uds = UnixListenerStream::new(uds);
 
-    let greeter = MyGreeter::new(event_sender.clone());
     let loglevel = MyLogLevel::new(event_sender.clone());
+    let yeet = MyYeet::new(event_sender.clone());
 
     let reflection = match tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
@@ -270,8 +276,8 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
     };
 
     let uds_server = Server::builder()
-        .add_service(GreeterServer::new(greeter))
         .add_service(LogLevelServer::new(loglevel))
+        .add_service(YeetServer::new(yeet))
         .add_service(reflection)
         .serve_with_incoming(addr_uds);
 

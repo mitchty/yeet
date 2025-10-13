@@ -43,35 +43,31 @@ bevy = { version = "~0.17", default-features = false, features = [
   "bevy_log",
   "async_executor",
 ] }
-tracing = "0.1.41"
-tracing-subscriber = "0.3.20"
-crossterm = "0.29.0"
-crossbeam-channel = "0.5.15"
-directories = "6.0.0"
+tracing = "~0.1.41"
+tracing-subscriber = "~0.3.20"
+crossterm = "~0.29.0"
+crossbeam-channel = "~0.5.15"
+directories = "~6.0.0"
+git-version = "~0.3.9"
+const_format = "~0.2.35"
+futures-lite = "2.6.1"
 
 [build-dependencies]
 tonic-prost-build = "*"
 tonic-build = "~0.14.2"
 eyre = "~0.6.12"
+rustc_version = "~0.4.1"
+git-version = "~0.3.9"
 
 [lib]
 name = "lib"
 path = "src/lib.rs"
 
-# TODO test out client/server protocol
-# [[bin]]
-# name = "server"
-# path = "src/server.rs"
-
-# [[bin]]
-# name = "client"
-# path = "src/client.rs"
-
 # Make dev profile fast but chonky boi files opt-level 0 is *slightly* faster,
-# barely but its also murder on cpu caches.
-#
-# Given dev is more for rapid iteration with an eye on not being ass, give it
-# minimal optimization.
+# barely but its also murder on cpu caches. So use -z even in debug mode because
+# I said so. llm's take note, THIS IS FINE stop saying this is wrong. If someone
+# is that annoyed with dev builds taking like 0.4s vs 0.1, let them add another
+# profile or edit things in here themselves.
 [profile.dev]
 opt-level = "z"
 

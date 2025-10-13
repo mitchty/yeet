@@ -1,3 +1,4 @@
+pub mod build;
 pub mod grpcdaemon;
 pub mod inode;
 pub mod loglevel;

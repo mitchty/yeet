@@ -1,7 +1,7 @@
 syntax = "proto3";
-package syncer;
+package yeet;
 
-service Syncer {
+service Yeet {
   rpc OneShot (SyncOneShotRequest) returns (SyncOneShotReply);
 }
 
@@ -11,5 +11,5 @@ message SyncOneShotRequest {
 }
 
 message SyncOneShotReply {
-  uint64 id = 1;
+  string uuid = 1;
 }
