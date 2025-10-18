@@ -29,6 +29,17 @@ pub struct OneShot;
 #[derive(Debug, Default, Component)]
 pub struct SyncComplete;
 
+// Remote host specification (user@host)
+#[derive(Debug, Component, Deref)]
+pub struct RemoteHost(pub String);
+
+// SSH port forwarding info
+#[derive(Debug, Component)]
+pub struct SshForwarding {
+    pub local_port: u16,
+    pub remote_port: u16,
+}
+
 #[derive(Debug, Clone, Event, Message)]
 pub enum RpcEvent {
     OneshotSync {
@@ -102,6 +113,18 @@ pub enum DebugError {
         "YEETERR0 You shouldn't see this error, this is definitely a bug. Open an issue for mitch to fix it and stop being lazy {0}"
     )]
     MitchIsLazy(String),
+}
+
+// Parse "host:/path" or "/path" syntax
+// Returns (host, path) where host is None for local paths
+pub fn parse_remote_spec(spec: &str) -> Result<(Option<String>, std::path::PathBuf), String> {
+    if let Some((host, path)) = spec.split_once(':') {
+        // Remote: "user@host:/path"
+        Ok((Some(host.to_string()), std::path::PathBuf::from(path)))
+    } else {
+        // Local: "/path"
+        Ok((None, std::path::PathBuf::from(spec)))
+    }
 }
 
 // Make sure we're not being asked to sync to the same directory in both args. I can allow this (though it seems silly) at some point in the future.

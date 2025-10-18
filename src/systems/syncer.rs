@@ -1,7 +1,11 @@
 use bevy::prelude::*;
 use bevy_cronjob::prelude::*;
 
-use crate::{Dest, OneShot, Source, SyncComplete, Uuid};
+use crate::systems::ssh::forwarding::{Pending as ForwardingPending, Request as ForwardingRequest};
+use crate::systems::ssh::pool::{
+    Pending as ConnectionPending, Ref as ConnectionRef, Request as ConnectionRequest,
+};
+use crate::{Dest, OneShot, RemoteHost, Source, SshForwarding, SyncComplete, Uuid};
 
 pub struct Syncer;
 
@@ -11,6 +15,8 @@ pub struct Syncer;
 //
 // But it might make sense to use that for bridging events from
 // epoll()/ionotify/ebpf in future too.
+//
+// This is a "future mitch" task from past jerk mitch to figure out
 #[derive(Component)]
 struct SyncTask(bevy::tasks::Task<Result<(), String>>);
 
@@ -45,34 +51,25 @@ struct SyncTask(bevy::tasks::Task<Result<(), String>>);
 // Adding an entity to Sync from source to dest kicks off the other work.
 impl Plugin for Syncer {
     fn build(&self, app: &mut App) {
-        // We don't add this ourselves, the caller is responsible for
-        // configuring the the cronjob plugin as its shared across Plugins
+        // We don't add these ourselves, the caller is responsible for
+        // configuring shared plugins for Syncer for now. Future me gets to
+        // brain a less tacky way to do this.
         assert!(app.is_plugin_added::<bevy_cronjob::CronJobPlugin>());
+        // SSH operations require SSH pool and forwarding managers
+        assert!(app.is_plugin_added::<crate::systems::ssh::Pool>());
+        assert!(app.is_plugin_added::<crate::systems::ssh::Manager>());
 
         app.add_systems(Update, update.run_if(schedule_passed("every second")));
         app.add_systems(
             Update,
             (
-                spawn_sync_tasks,
+                request_ssh_connections,
+                request_ssh_forwarding.after(request_ssh_connections),
+                spawn_sync_tasks.after(request_ssh_forwarding),
                 check_sync_completion.after(spawn_sync_tasks),
             ),
         );
-
-        // Dump out I'm idle bra every 60 seconds or so
-        app.add_systems(
-            Update,
-            update_idle.run_if(schedule_passed("every 1 minute")),
-        );
-        // app.add_systems(Startup, move |cmd: Commands| startup(cmd))
-        //     .add_systems(Update, update);
     }
-}
-
-// Stupid idle system when there is nothing to sync.
-fn update_idle(_: Query<(), (Without<Source>, Without<Dest>)>) -> Result {
-    debug!("idle");
-
-    Ok(())
 }
 
 // Dump out anything that is actively syncing (or just was and isn't updated in
@@ -80,24 +77,27 @@ fn update_idle(_: Query<(), (Without<Source>, Without<Dest>)>) -> Result {
 //
 // Note, for now we'll only deal with things with a OneShot marker
 fn update(
-    mut _commands: Commands,
-    query: Query<(Entity, &Source, &Dest, &Uuid, &OneShot), Without<SyncComplete>>,
+    query: Query<
+        (Entity, &Source, &Dest, &Uuid, &OneShot),
+        (Without<SyncComplete>, With<SyncTask>),
+    >,
 ) -> Result {
-    for (_entity, lhs, rhs, uuid, _os) in &query {
+    let len = query.iter().count();
+
+    if len > 0 {
+        info!("oneshots: {}", len);
+    }
+    for (entity, lhs, rhs, uuid, _os) in &query {
         info!(
-            "oneshot sync {}->{} uuid {}",
+            "oneshot sync {entity} {}->{} uuid {}",
             lhs.display(),
             rhs.display(),
             uuid::Uuid::from_u128(uuid.0)
         );
-
-        //        commands.entity(entity).insert(SyncComplete);
     }
     Ok(())
 }
 
-// Go away clippy its not a problem, I know its complex its just a lot of crap and how bevy works.
-#[allow(clippy::type_complexity)]
 fn spawn_sync_tasks(
     mut commands: Commands,
     query: Query<(Entity, &Source, &Dest, &OneShot), (Without<SyncTask>, Without<SyncComplete>)>,
@@ -144,6 +144,60 @@ fn check_sync_completion(
                 }
             }
         }
+    }
+    Ok(())
+}
+
+// System to request SSH connections for remote syncs
+fn request_ssh_connections(
+    mut commands: Commands,
+    query: Query<
+        (Entity, &RemoteHost, &OneShot),
+        (
+            Without<ConnectionRequest>,
+            Without<ConnectionRef>,
+            Without<ConnectionPending>,
+        ),
+    >,
+) -> Result {
+    for (entity, remote_host, _) in &query {
+        let host_spec = remote_host.0.clone();
+
+        info!(
+            "Requesting SSH connection to {} for entity {:?}",
+            host_spec, entity
+        );
+
+        commands
+            .entity(entity)
+            .insert(ConnectionRequest { host_spec });
+    }
+    Ok(())
+}
+
+// System to request SSH forwarding for entities with SSH connections
+fn request_ssh_forwarding(
+    mut commands: Commands,
+    query: Query<
+        (Entity, &ConnectionRef),
+        (
+            Without<ConnectionRequest>,
+            Without<SshForwarding>,
+            Without<ForwardingPending>,
+        ),
+    >,
+) -> Result {
+    for (entity, _ssh_ref) in &query {
+        let remote_port = 50051; // gRPC port
+
+        info!(
+            "Requesting SSH forwarding for entity {:?} to port {}",
+            entity, remote_port
+        );
+
+        commands
+            .entity(entity)
+            .insert(ForwardingRequest { remote_port });
     }
     Ok(())
 }

@@ -145,6 +145,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 },
                 lib::systems::sys::Sys,
                 lib::systems::build::Build,
+                lib::systems::ssh::Pool,
+                lib::systems::ssh::Manager,
                 lib::systems::syncer::Syncer,
                 lib::systems::grpcdaemon::GrpcDaemon,
             ));

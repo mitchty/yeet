@@ -51,6 +51,10 @@ directories = "~6.0.0"
 git-version = "~0.3.9"
 const_format = "~0.2.35"
 futures-lite = "2.6.1"
+russh = "~0.45"
+russh-keys = "~0.45"
+async-trait = "~0.1"
+lightyear = { version = "~0.25.3", default-feature = false, features = ["client", "server", "replication", "std", "crossbeam", "metrics"] }
 
 [build-dependencies]
 tonic-prost-build = "*"

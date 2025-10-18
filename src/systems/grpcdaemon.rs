@@ -7,7 +7,10 @@ use crate::rpc::{
     loglevel::{MyLogLevel, log_level_server::LogLevelServer},
     yeet::{MyYeet, yeet_server::YeetServer},
 };
-use crate::{Dest, OneShot, RpcEvent, Source, SyncEventReceiver, SyncEventSender, Uuid};
+use crate::{
+    Dest, OneShot, RemoteHost, RpcEvent, Source, SyncEventReceiver, SyncEventSender, Uuid,
+    parse_remote_spec,
+};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -36,12 +39,26 @@ fn handle_rpc_event(
                     "got a one shot sync request lhs {lhs}, rhs {rhs}, uuid {uuid} {}",
                     uuid::Uuid::from_u128(*uuid)
                 );
-                commands.spawn((
-                    Source(std::path::PathBuf::from(lhs)),
-                    Dest(std::path::PathBuf::from(rhs)),
-                    Uuid(*uuid),
-                    OneShot {},
-                ));
+
+                // Parse source and dest (may be remote)
+                let (lhs_host, lhs_path) = parse_remote_spec(lhs)
+                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(lhs)));
+                let (rhs_host, rhs_path) = parse_remote_spec(rhs)
+                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(rhs)));
+
+                let mut entity = commands.spawn((Uuid(*uuid), OneShot {}));
+
+                // Add source components
+                if let Some(host) = lhs_host {
+                    entity.insert(RemoteHost(host));
+                }
+                entity.insert(Source(lhs_path));
+
+                // Add dest components
+                if let Some(_host) = rhs_host {
+                    warn!("Remote dest not yet implemented");
+                }
+                entity.insert(Dest(rhs_path));
             }
             RpcEvent::LogLevel { level } => {
                 debug!("handling loglevel event: {:?}", level);
