@@ -20,9 +20,9 @@ pub struct Dest(pub std::path::PathBuf);
 #[derive(Debug, Default, Component, Deref)]
 pub struct Uuid(pub u128);
 
-// Marker component to differentiate OneShot syncs vs not
+// Marker component to differentiate SimpleCopy syncs vs future fun
 #[derive(Debug, Default, Component)]
-pub struct OneShot;
+pub struct SimpleCopy;
 
 // TODO: Should this be an enum? I kinda want a marker component for "totes
 // done" vs intermediate state
@@ -42,7 +42,7 @@ pub struct SshForwarding {
 
 #[derive(Debug, Clone, Event, Message)]
 pub enum RpcEvent {
-    OneshotSync {
+    SimpleCopySync {
         lhs: String,
         rhs: String,
         uuid: u128,
@@ -153,7 +153,7 @@ fn guard_invalid<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
     Ok(())
 }
 
-// Oneshot sync function, note this isn't async so it can run in bevy.
+// SimpleCopy sync function, note this isn't async so it can run in bevy.
 pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
     from: U,
     to: V,

@@ -28,10 +28,10 @@ impl MyYeet {
 
 #[tonic::async_trait]
 impl Yeet for MyYeet {
-    async fn one_shot(
+    async fn simple_copy(
         &self,
-        request: Request<SyncOneShotRequest>,
-    ) -> Result<Response<SyncOneShotReply>, Status> {
+        request: Request<SyncSimpleCopyRequest>,
+    ) -> Result<Response<SyncSimpleCopyReply>, Status> {
         use uuid::Uuid;
 
         debug!("Got a request: {:?}", request);
@@ -59,9 +59,9 @@ impl Yeet for MyYeet {
             .event_sender
             .lock()
             .expect("could not lock event sender");
-        let _ = s.send(RpcEvent::OneshotSync { lhs, rhs, uuid });
+        let _ = s.send(RpcEvent::SimpleCopySync { lhs, rhs, uuid });
 
-        let reply = SyncOneShotReply {
+        let reply = SyncSimpleCopyReply {
             uuid: uuid::Uuid::from_u128(uuid).to_string(),
         };
 

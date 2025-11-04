@@ -5,7 +5,7 @@ use crate::systems::ssh::forwarding::{Pending as ForwardingPending, Request as F
 use crate::systems::ssh::pool::{
     Pending as ConnectionPending, Ref as ConnectionRef, Request as ConnectionRequest,
 };
-use crate::{Dest, OneShot, RemoteHost, Source, SshForwarding, SyncComplete, Uuid};
+use crate::{Dest, RemoteHost, SimpleCopy, Source, SshForwarding, SyncComplete, Uuid};
 
 pub struct Syncer;
 
@@ -59,7 +59,9 @@ impl Plugin for Syncer {
         assert!(app.is_plugin_added::<crate::systems::ssh::Pool>());
         assert!(app.is_plugin_added::<crate::systems::ssh::Manager>());
 
-        app.add_systems(Update, update.run_if(schedule_passed("every second")));
+        // Don't spam these debug messages too often, kinda silly.
+        app.add_systems(Update, update.run_if(schedule_passed("every 3 seconds")));
+
         app.add_systems(
             Update,
             (
@@ -75,32 +77,32 @@ impl Plugin for Syncer {
 // Dump out anything that is actively syncing (or just was and isn't updated in
 // this tick) when run.
 //
-// Note, for now we'll only deal with things with a OneShot marker
+// Note, for now we'll only deal with things with a SimpleCopy marker
 fn update(
     query: Query<
-        (Entity, &Source, &Dest, &Uuid, &OneShot),
+        (Entity, &Source, &Dest, &Uuid, &SimpleCopy),
         (Without<SyncComplete>, With<SyncTask>),
     >,
 ) -> Result {
     let len = query.iter().count();
 
     if len > 0 {
-        info!("oneshots: {}", len);
+        debug!("simplecopies: {}", len);
     }
-    for (entity, lhs, rhs, uuid, _os) in &query {
-        info!(
-            "oneshot sync {entity} {}->{} uuid {}",
-            lhs.display(),
-            rhs.display(),
-            uuid::Uuid::from_u128(uuid.0)
-        );
-    }
+    // for (entity, lhs, rhs, uuid, _os) in &query {
+    //     info!(
+    //         "simplecopy sync {entity} {}->{} uuid {}",
+    //         lhs.display(),
+    //         rhs.display(),
+    //         uuid::Uuid::from_u128(uuid.0)
+    //     );
+    // }
     Ok(())
 }
 
 fn spawn_sync_tasks(
     mut commands: Commands,
-    query: Query<(Entity, &Source, &Dest, &OneShot), (Without<SyncTask>, Without<SyncComplete>)>,
+    query: Query<(Entity, &Source, &Dest, &SimpleCopy), (Without<SyncTask>, Without<SyncComplete>)>,
 ) -> Result {
     let task_pool = bevy::tasks::IoTaskPool::get();
 
@@ -108,16 +110,19 @@ fn spawn_sync_tasks(
         let source = source.0.clone();
         let dest = dest.0.clone();
 
-        // Oneshot is a glorified cp for now.
+        // SimpleCopy is a glorified cp for now.
         info!(
-            "spawning oneshot sync task {} -> {}",
+            "spawning simplecopy sync task {} -> {}",
             source.display(),
             dest.display()
         );
 
-        let task = task_pool.spawn(async move { oneshot(source, dest).await });
+        let task = task_pool.spawn(async move { simplecopy(source, dest).await });
 
-        commands.entity(entity).insert(SyncTask(task));
+        commands.entity(entity).insert((
+            SyncTask(task),
+            crate::systems::protocol::SyncStartTime(std::time::Instant::now()),
+        ));
     }
     Ok(())
 }
@@ -152,7 +157,7 @@ fn check_sync_completion(
 fn request_ssh_connections(
     mut commands: Commands,
     query: Query<
-        (Entity, &RemoteHost, &OneShot),
+        (Entity, &RemoteHost, &SimpleCopy),
         (
             Without<ConnectionRequest>,
             Without<ConnectionRef>,
@@ -202,7 +207,7 @@ fn request_ssh_forwarding(
     Ok(())
 }
 
-async fn oneshot(source: std::path::PathBuf, dest: std::path::PathBuf) -> Result<(), String> {
+async fn simplecopy(source: std::path::PathBuf, dest: std::path::PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
 
     let entries = std::fs::read_dir(&source).map_err(|e| e.to_string())?;

@@ -9,15 +9,14 @@ pub struct Pool;
 
 impl Plugin for Pool {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Registry::default())
-            .add_systems(
-                Update,
-                (
-                    establish_requested_connections,
-                    check_connection_establishment,
-                    cleanup_unused_connections.run_if(run_every_n_seconds(30.0)),
-                ),
-            );
+        app.insert_resource(Registry::default()).add_systems(
+            Update,
+            (
+                establish_requested_connections,
+                check_connection_establishment,
+                cleanup_unused_connections.run_if(run_every_n_seconds(30.0)),
+            ),
+        );
     }
 }
 
@@ -186,7 +185,7 @@ fn establish_requested_connections(
                     host_spec, entity
                 );
 
-		// TODO: unit tests and function this hack af crap
+                // TODO: unit tests and function this hack af crap
                 let (user, hostname) = if let Some((u, h)) = host_spec.split_once('@') {
                     (u.to_string(), h.to_string())
                 } else {
@@ -286,7 +285,7 @@ pub fn release_connection_on_despawn(
     _registry: ResMut<Registry>,
 ) {
     for _entity in removed.read() {
-// Need to make Registry stuff a Component that I can share between connections and forwards, future me task
+        // Need to make Registry stuff a Component that I can share between connections and forwards, future me task
         debug!("Entity with ssh connection reference was despawned");
     }
 }
@@ -327,13 +326,13 @@ mod tests {
         app.add_plugins(bevy_tokio_tasks::TokioTasksPlugin::default());
         // Note: We can't add the actual Pool plugin because it requires real ssh connections
         // Instead, we'll add the resource and test the logic directly to test just that.
-	//
-	// Bevy ECS testing is nice af for this separation of "do crap" vs "decide to do crap"
-	//
-	// These tests are the latter, former I'm not sure how I can unit test ssh connections.
-	//
-	// Think something more high level outside of rust is in order for that
-	// as integration tests.
+        //
+        // Bevy ECS testing is nice af for this separation of "do crap" vs "decide to do crap"
+        //
+        // These tests are the latter, former I'm not sure how I can unit test ssh connections.
+        //
+        // Think something more high level outside of rust is in order for that
+        // as integration tests.
         app.insert_resource(Registry::default());
         app
     }

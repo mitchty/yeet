@@ -8,77 +8,13 @@ use crate::rpc::{
     yeet::{MyYeet, yeet_server::YeetServer},
 };
 use crate::{
-    Dest, OneShot, RemoteHost, RpcEvent, Source, SyncEventReceiver, SyncEventSender, Uuid,
+    Dest, RemoteHost, RpcEvent, SimpleCopy, Source, SyncEventReceiver, SyncEventSender, Uuid,
     parse_remote_spec,
 };
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-// Poll for grpc events on the mpsc channel first.
-fn poll_rpc_events(mut event_writer: MessageWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
-    if let Ok(mut r) = receiver.0.lock() {
-        while let Ok(event) = r.try_recv() {
-            debug!("found gprc event {:?}", event);
-            event_writer.write(event);
-        }
-    }
-}
-
-// This always runs after ^^^ to minimize the ecs seeing components between ticks.
-fn handle_rpc_event(
-    mut commands: Commands,
-    mut events: MessageReader<RpcEvent>,
-    log_handle: Option<Res<crate::systems::loglevel::LogHandle>>,
-) {
-    use crate::rpc::loglevel::Level;
-
-    for event in events.read() {
-        match event {
-            RpcEvent::OneshotSync { lhs, rhs, uuid } => {
-                debug!(
-                    "got a one shot sync request lhs {lhs}, rhs {rhs}, uuid {uuid} {}",
-                    uuid::Uuid::from_u128(*uuid)
-                );
-
-                // Parse source and dest (may be remote)
-                let (lhs_host, lhs_path) = parse_remote_spec(lhs)
-                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(lhs)));
-                let (rhs_host, rhs_path) = parse_remote_spec(rhs)
-                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(rhs)));
-
-                let mut entity = commands.spawn((Uuid(*uuid), OneShot {}));
-
-                // Add source components
-                if let Some(host) = lhs_host {
-                    entity.insert(RemoteHost(host));
-                }
-                entity.insert(Source(lhs_path));
-
-                // Add dest components
-                if let Some(_host) = rhs_host {
-                    warn!("Remote dest not yet implemented");
-                }
-                entity.insert(Dest(rhs_path));
-            }
-            RpcEvent::LogLevel { level } => {
-                debug!("handling loglevel event: {:?}", level);
-                if let Some(ref handle) = log_handle {
-                    let set_level = match *level {
-                        Level::Trace => "trace",
-                        Level::Debug => "debug",
-                        Level::Info => "info",
-                        Level::Warn => "warn",
-                        Level::Error => "error",
-                        Level::NoneUnspecified => "info",
-                    };
-                    let _ = handle.set_max_level(String::from(set_level));
-                }
-            }
-        }
-    }
-}
-
-pub struct GrpcDaemon;
+pub struct GrpcPlugin;
 
 // There are 2 different server "types", or will be at some point
 //
@@ -90,7 +26,7 @@ pub struct GrpcDaemon;
 // systems, 2 per maybe? And one will be for control plane rpc, the other for
 // sending sync data rpc (or not at all if that turns out to not work well
 // enough).
-impl Plugin for GrpcDaemon {
+impl Plugin for GrpcPlugin {
     fn build(&self, app: &mut App) {
         use tap::prelude::*;
         // We don't add this ourselves, the caller is responsible for
@@ -138,6 +74,70 @@ impl Plugin for GrpcDaemon {
     }
 }
 
+// Poll for grpc events on the mpsc channel first.
+fn poll_rpc_events(mut event_writer: MessageWriter<RpcEvent>, receiver: Res<SyncEventReceiver>) {
+    if let Ok(mut r) = receiver.0.lock() {
+        while let Ok(event) = r.try_recv() {
+            debug!("found gprc event {:?}", event);
+            event_writer.write(event);
+        }
+    }
+}
+
+// This always runs after ^^^ to minimize the ecs seeing components between ticks.
+fn handle_rpc_event(
+    mut commands: Commands,
+    mut events: MessageReader<RpcEvent>,
+    log_handle: Option<Res<crate::systems::loglevel::LogHandle>>,
+) {
+    use crate::rpc::loglevel::Level;
+
+    for event in events.read() {
+        match event {
+            RpcEvent::SimpleCopySync { lhs, rhs, uuid } => {
+                debug!(
+                    "got a simple copy sync request lhs {lhs}, rhs {rhs}, uuid {uuid} {}",
+                    uuid::Uuid::from_u128(*uuid)
+                );
+
+                // Parse source and dest (may be remote)
+                let (lhs_host, lhs_path) = parse_remote_spec(lhs)
+                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(lhs)));
+                let (rhs_host, rhs_path) = parse_remote_spec(rhs)
+                    .unwrap_or_else(|_| (None, std::path::PathBuf::from(rhs)));
+
+                let mut entity = commands.spawn((Uuid(*uuid), SimpleCopy {}));
+
+                // Add source components
+                if let Some(host) = lhs_host {
+                    entity.insert(RemoteHost(host));
+                }
+                entity.insert(Source(lhs_path));
+
+                // Add dest components
+                if let Some(_host) = rhs_host {
+                    warn!("Remote dest not yet implemented");
+                }
+                entity.insert(Dest(rhs_path));
+            }
+            RpcEvent::LogLevel { level } => {
+                debug!("handling loglevel event: {:?}", level);
+                if let Some(ref handle) = log_handle {
+                    let set_level = match *level {
+                        Level::Trace => "trace",
+                        Level::Debug => "debug",
+                        Level::Info => "info",
+                        Level::Warn => "warn",
+                        Level::Error => "error",
+                        Level::NoneUnspecified => "info",
+                    };
+                    let _ = handle.set_max_level(String::from(set_level));
+                }
+            }
+        }
+    }
+}
+
 // TODO: wrap me in a cfg unix directive once/if windows is figured out
 //
 // At that point figure out the "right" thing to abuse in lieu of UDS for local
@@ -150,11 +150,13 @@ fn startup(mut commands: Commands) {
 // bevy wrapper system that spawns the async tokio grpc task for listening
 #[cfg(unix)]
 fn start_uds(runtime: ResMut<'_, TokioTasksRuntime>, event_sender: Res<crate::SyncEventSender>) {
+    info!("starting unix domain server in separate thread");
     let sender = event_sender.0.clone();
     runtime.spawn_background_task(move |ctx| run_uds(ctx, sender));
 }
 
 fn start_tcp(runtime: ResMut<'_, TokioTasksRuntime>, event_sender: Res<crate::SyncEventSender>) {
+    info!("starting tcp server in separate thread");
     let sender = event_sender.0.clone();
     runtime.spawn_background_task(move |ctx| run_tcp(ctx, sender));
 }

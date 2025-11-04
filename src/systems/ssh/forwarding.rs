@@ -11,15 +11,14 @@ pub struct Manager;
 
 impl Plugin for Manager {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Registry::default())
-            .add_systems(
-                Update,
-                (
-                    setup_requested_forwarding,
-                    check_forwarding_establishment,
-                    cleanup_unused_forwarding.run_if(run_every_n_seconds(60.0)),
-                ),
-            );
+        app.insert_resource(Registry::default()).add_systems(
+            Update,
+            (
+                setup_requested_forwarding,
+                check_forwarding_establishment,
+                cleanup_unused_forwarding.run_if(run_every_n_seconds(60.0)),
+            ),
+        );
     }
 }
 
@@ -291,7 +290,7 @@ fn check_forwarding_establishment(
                     }
                 }
             } else {
-		// Retry next tick/fn call I guess
+                // Retry next tick/fn call I guess
                 let mut pending = registry.pending.lock().unwrap();
                 pending.insert((host_spec, remote_port), task);
             }

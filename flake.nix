@@ -2,7 +2,9 @@
   description = "WIP DO NOT USE THIS IS A TOTAL HOLD MY BEER EXPERIMENT";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    #nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    #nixpkgs.url = "github:NixOS/nixpkgs/7e297ddff44a3cc93673bb38d0374df8d0ad73e4";
 
     crane.url = "github:ipetkov/crane";
 
@@ -10,17 +12,12 @@
 
     fenix = {
       url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      #      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    omnix = {
-      url = "github:juspay/omnix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      #      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -39,6 +36,9 @@
 
           overlays = [
             inputs.fenix.overlays.default
+            (self: super: {
+              apple-sdk-test = super.apple-sdk_15;
+            })
           ];
         };
 
@@ -98,16 +98,25 @@
         commonArgs = {
           inherit src;
           strictDeps = true;
-          buildInputs = with pkgs; [
-            protobuf
-            grpcurl
-          ];
+          buildInputs =
+            with pkgs;
+            [
+              protobuf
+              grpcurl
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.apple-sdk-test
+            ];
+
           nativeBuildInputs = [
             pkgs.git
           ]
-          ++ lib.optionals pkgs.stdenv.isLinux [
+          ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             pkgs.mold-wrapped
             pkgs.lld
+          ]
+          ++ lib.optionals pkgs.stdenv.isDarwin [
+            pkgs.apple-sdk-test
           ];
         };
 
@@ -165,6 +174,8 @@
         };
 
         devShells.default = craneLib.devShell {
+          buildInputs = commonArgs.buildInputs;
+          nativeBuildInputs = commonArgs.nativeBuildInputs;
           packages = (
             with pkgs;
             [
@@ -181,9 +192,12 @@
               taplo
               treefmt
               protolint
-              inputs.omnix.packages.${system}.omnix-cli
             ]
             ++ commonArgs.buildInputs
+            ++ commonArgs.nativeBuildInputs
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              pkgs.apple-sdk-test
+            ]
           );
         };
       }

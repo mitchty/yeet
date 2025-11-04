@@ -2,14 +2,14 @@ syntax = "proto3";
 package yeet;
 
 service Yeet {
-  rpc OneShot (SyncOneShotRequest) returns (SyncOneShotReply);
+  rpc SimpleCopy (SyncSimpleCopyRequest) returns (SyncSimpleCopyReply);
 }
 
-message SyncOneShotRequest {
+message SyncSimpleCopyRequest {
   string lhs = 1;
   string rhs = 2;
 }
 
-message SyncOneShotReply {
+message SyncSimpleCopyReply {
   string uuid = 1;
 }

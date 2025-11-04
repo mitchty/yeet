@@ -2,9 +2,12 @@
 // Bevy queries get complex but clippy can stop yappin about it for all systems
 // code its normal and I'm sick of annotating each system function.
 pub mod build;
-pub mod grpcdaemon;
+pub mod grpc;
 pub mod inode;
 pub mod loglevel;
+pub mod monitor;
+pub mod netcode;
+pub mod protocol;
 pub mod ssh;
 pub mod stats;
 pub mod syncer;

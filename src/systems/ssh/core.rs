@@ -9,7 +9,7 @@ pub struct Ssh;
 
 impl Plugin for Ssh {
     fn build(&self, _app: &mut App) {
-	// nop for now maybe forever...
+        // nop for now maybe forever...
     }
 }
 
@@ -72,9 +72,9 @@ pub async fn connect(
             Err(e) => return Err(format!("key auth failed: {}", e).into()),
         }
     } else {
-	// TODO: Need to allow users/callers to control what keys we will use.
-	// Note I am never dealing with passwords for this, you want yeet you
-	// use keys end of story.
+        // TODO: Need to allow users/callers to control what keys we will use.
+        // Note I am never dealing with passwords for this, you want yeet you
+        // use keys end of story.
         let home = std::env::var("HOME")?;
         let key_paths = vec![
             std::path::PathBuf::from(format!("{}/.ssh/id_rsa", home)),
@@ -131,11 +131,11 @@ pub async fn setup_port_forward(
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
     debug!(
         "setting up port forward to {}:{} via {}@{}",
-        "127.0.0.1", remote_port, session.user, session.host
+        "localhost", remote_port, session.user, session.host
     );
 
     // Let the os give us a random port to bind to on localhost
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let listener = TcpListener::bind("localhost:0").await?;
     let local_addr = listener.local_addr()?;
     let local_port = local_addr.port();
 
@@ -186,12 +186,7 @@ async fn forward_connection(
     use tokio::sync::mpsc;
 
     let mut channel = session
-        .channel_open_direct_tcpip(
-            "127.0.0.1",
-            remote_port as u32,
-            "127.0.0.1",
-            0,
-        )
+        .channel_open_direct_tcpip("localhost", remote_port as u32, "localhost", 0)
         .await?;
 
     debug!("ssh channel opened for forwarding");
@@ -205,7 +200,7 @@ async fn forward_connection(
         loop {
             match local_read.read(&mut buf).await {
                 Ok(0) => {
-                    debug!("Local connection closed (EOF)");
+                    debug!("local connection closed (EOF)");
                     break;
                 }
                 Ok(n) => {
@@ -267,7 +262,7 @@ async fn forward_connection(
 mod tests {
     #[test]
     fn test_ssh_session_is_cloneable() {
-	//TODO: write tests for this future mitch, past mitch wants to build a yeet monitor/status client via lightyear first
+        //TODO: write tests for this future mitch, past mitch wants to build a yeet monitor/status client via lightyear first
         // Verify SshSession can be cloned (required for Component)
         // This is a compile-time test - if it compiles, it works... I think, haven't brained long on this yet, this is future brain dump.
     }
