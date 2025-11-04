@@ -4,7 +4,9 @@ use bevy::prelude::*;
 use core::net::SocketAddr;
 use std::time::{Duration, Instant};
 
+#[cfg(debug_assertions)]
 use bevy_cronjob::prelude::*;
+
 use lightyear::netcode::Key;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
@@ -110,10 +112,10 @@ fn find_available_port() -> std::result::Result<u16, Box<dyn std::error::Error>>
     const PORT_MAX: u16 = 65535;
     const MAX_ATTEMPTS: u32 = 100;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for _ in 0..MAX_ATTEMPTS {
-        let port = rng.gen_range(PORT_MIN..=PORT_MAX);
+        let port = rng.random_range(PORT_MIN..=PORT_MAX);
 
         match TcpListener::bind(("localhost", port)) {
             Ok(_) => {
@@ -276,6 +278,7 @@ fn handle_disconnected(
     info!("will retrying connection");
 }
 
+#[cfg(debug_assertions)]
 fn handle_reconnection(
     mut reconnect_state: ResMut<ReconnectionState>,
     mut commands: Commands,

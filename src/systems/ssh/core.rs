@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use russh::*;
-use russh_keys::*;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -37,14 +36,14 @@ pub struct Client;
 impl client::Handler for Client {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
-        server_public_key: &key::PublicKey,
-    ) -> Result<bool, Self::Error> {
+        server_public_key: &keys::PublicKey,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
         // TODO: Implement proper known_hosts checking
         // For now, log and accept whatever, nobody sane should be using this yet anyway
         debug!("server key: {:?}", server_public_key);
-        Ok(true)
+        async { Ok(true) }
     }
 }
 
@@ -62,9 +61,10 @@ pub async fn connect(
 
     if let Some(key_path) = key_path {
         info!("attempting key auth with: {:?}", key_path);
-        let key_pair = load_secret_key(key_path, None)?;
+        let key_pair = keys::load_secret_key(key_path, None)?;
+        let key_with_alg = keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), None);
         let auth_res = session
-            .authenticate_publickey(&user, Arc::new(key_pair))
+            .authenticate_publickey(&user, key_with_alg)
             .await;
 
         match auth_res {
@@ -87,10 +87,11 @@ pub async fn connect(
                 continue;
             }
             debug!("trying key {:?}", path);
-            match load_secret_key(&path, None) {
+            match keys::load_secret_key(&path, None) {
                 Ok(key_pair) => {
+                    let key_with_alg = keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), None);
                     if session
-                        .authenticate_publickey(&user, Arc::new(key_pair))
+                        .authenticate_publickey(&user, key_with_alg)
                         .await
                         .is_ok()
                     {

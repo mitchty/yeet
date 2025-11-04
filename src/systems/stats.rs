@@ -50,7 +50,6 @@ fn startup(mut commands: Commands) -> Result {
         // This is before the main entity spawn as that takes ownership of the
         // System struct.
         let mem: Option<Mem> = if let Some(process) = sys.process(sysinfo::get_current_pid()?) {
-            warn!("yay?");
             Some(Mem(process.memory()))
         } else {
             warn!("could not get process memory stats?");
@@ -58,7 +57,6 @@ fn startup(mut commands: Commands) -> Result {
         };
 
         let cpu: Option<Cpu> = if let Some(process) = sys.process(sysinfo::get_current_pid()?) {
-            warn!("yay?");
             Some(Cpu(process.cpu_usage()))
         } else {
             warn!("could not get process memory stats?");
