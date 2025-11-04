@@ -73,13 +73,12 @@ impl Plugin for LightYearClientPlugin {
         app.add_systems(Startup, (spawn_client_config, connect_client).chain());
         app.add_observer(handle_connected);
         app.add_observer(handle_disconnected);
+        app.add_systems(Update, handle_reconnection);
+
         #[cfg(debug_assertions)]
         app.add_systems(
             Update,
-            (
-                debug_received_entities.run_if(schedule_passed("every 7 seconds")),
-                handle_reconnection,
-            ),
+            debug_received_entities.run_if(schedule_passed("every 7 seconds")),
         );
     }
 }
@@ -278,7 +277,6 @@ fn handle_disconnected(
     info!("will retrying connection");
 }
 
-#[cfg(debug_assertions)]
 fn handle_reconnection(
     mut reconnect_state: ResMut<ReconnectionState>,
     mut commands: Commands,
