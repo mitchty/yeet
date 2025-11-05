@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::netcode::protocol::{
     ReplicatedCompletionTime, ReplicatedDest, ReplicatedSimpleCopy, ReplicatedSource,
-    ReplicatedSyncComplete, ReplicatedSyncStartTime, ReplicatedUuid,
+    ReplicatedSyncComplete, ReplicatedSyncStartTime, ReplicatedSyncStopTime, ReplicatedUuid,
 };
 use super::stats::{Cpu, Mem, Uptime};
 
@@ -84,6 +84,7 @@ fn update_display(
             Option<&ReplicatedSyncComplete>,
             Option<&ReplicatedCompletionTime>,
             Option<&ReplicatedSyncStartTime>,
+            Option<&ReplicatedSyncStopTime>,
         ),
         With<ReplicatedSimpleCopy>,
     >,
@@ -139,9 +140,9 @@ fn update_display(
     let mut in_progress = Vec::new();
     let mut completed = Vec::new();
 
-    for (source, dest, uuid, complete, completion_time, start_time) in query.iter() {
+    for (source, dest, uuid, complete, completion_time, start_time, stop_time) in query.iter() {
         if complete.is_some() {
-            completed.push((source, dest, uuid, completion_time));
+            completed.push((source, dest, uuid, completion_time, start_time, stop_time));
         } else {
             in_progress.push((source, dest, uuid, start_time));
         }
@@ -196,7 +197,7 @@ fn update_display(
             ));
             output.push_str(&manager.apply(
                 &format!(
-                    " {}: {} → {} {}{nl}",
+                    " {}:\t{} → {} {}{nl}",
                     running_for,
                     source.0.display(),
                     dest.0.display(),
@@ -207,7 +208,7 @@ fn update_display(
         }
 
         // completed crap
-        for (source, dest, uuid, completion_time) in completed {
+        for (source, dest, uuid, completion_time, start_time, stop_time) in completed {
             let uuid_str = uuid::Uuid::from_u128(uuid.0);
             let time_ago = if let Some(ct) = completion_time {
                 let current_secs = std::time::SystemTime::now()
@@ -223,14 +224,25 @@ fn update_display(
                 "?".to_string()
             };
 
-            output.push_str(&manager.apply("complete", ansi_term::Style::default()));
+            let duration_str = if let (Some(start), Some(stop)) = (start_time, stop_time) {
+                let duration_secs = stop.stopped_secs.saturating_sub(start.started_secs);
+                format!(
+                    "took {}",
+                    humantime::format_duration(Duration::from_secs(duration_secs))
+                )
+            } else {
+                String::new()
+            };
+
+            output.push_str(&manager.apply("completed", ansi_term::Style::default()));
             output.push_str(&manager.apply(
                 &format!(
-                    " {}: {} → {} {}{nl}",
+                    " {}: {} {} → {} {}{nl}",
                     time_ago,
+                    duration_str,
                     source.0.display(),
                     dest.0.display(),
-                    uuid_str
+                    uuid_str,
                 ),
                 ansi_term::Style::default(),
             ));

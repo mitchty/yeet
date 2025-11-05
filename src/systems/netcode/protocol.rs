@@ -21,7 +21,6 @@ pub struct SyncStatus {
 //
 // But it separates out what a user sees from what might be happening nicely so
 // I'll keep it for now or until I find something better.
-
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ReplicatedSource(pub PathBuf);
 
@@ -35,11 +34,16 @@ pub struct ReplicatedUuid(pub u128);
 pub struct ReplicatedSimpleCopy;
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ReplicatedSyncComplete;
+pub struct ReplicatedSyncComplete(pub u64);
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ReplicatedSyncStartTime {
     pub started_secs: u64,
+}
+
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ReplicatedSyncStopTime {
+    pub stopped_secs: u64,
 }
 
 #[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -64,6 +68,7 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<ReplicatedSimpleCopy>();
         app.register_component::<ReplicatedSyncComplete>();
         app.register_component::<ReplicatedSyncStartTime>();
+        app.register_component::<ReplicatedSyncStopTime>();
         app.register_component::<ReplicatedCompletionTime>();
 
         app.register_component::<crate::systems::stats::Uptime>();

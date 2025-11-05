@@ -138,10 +138,16 @@ fn check_sync_completion(
             match result {
                 Ok(_) => {
                     info!("sync completed for entity {:?}", entity);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)?
+                        .as_secs();
                     commands
                         .entity(entity)
                         .remove::<SyncTask>()
-                        .insert(SyncComplete);
+                        .insert((
+                            SyncComplete(now),
+                            crate::systems::protocol::SyncStopTime(std::time::Instant::now()),
+                        ));
                 }
                 Err(e) => {
                     error!("sync failed for entity {:?}: {}", entity, e);

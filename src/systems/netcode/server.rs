@@ -174,34 +174,45 @@ fn sync_entities_to_replicated(
             entity_commands.insert(ReplicatedSimpleCopy);
         }
 
-        if complete.is_some() {
+        if let Some(complete) = complete {
             entity_commands.insert((
-                ReplicatedSyncComplete,
+                ReplicatedSyncComplete(**complete),
                 ReplicatedCompletionTime {
-                    completed_secs: now_secs,
+                    completed_secs: **complete,
                 },
             ));
         }
     }
 }
 
-// TODO: I need to add this to the monitor output at some point.
 fn update_completion_time(
     mut commands: Commands,
-    query: Query<Entity, (Added<crate::SyncComplete>, With<ReplicatedSource>)>,
+    query: Query<
+        (
+            Entity,
+            &crate::SyncComplete,
+            Option<&crate::systems::protocol::SyncStopTime>,
+        ),
+        (Added<crate::SyncComplete>, With<ReplicatedSource>),
+    >,
 ) {
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    for entity in query.iter() {
-        commands.entity(entity).insert((
-            ReplicatedSyncComplete,
+    for (entity, complete, stop_time) in query.iter() {
+        let completion_secs = **complete;
+        let mut entity_commands = commands.entity(entity);
+        entity_commands.insert((
+            ReplicatedSyncComplete(completion_secs),
             ReplicatedCompletionTime {
-                completed_secs: now_secs,
+                completed_secs: completion_secs,
             },
         ));
+
+        if let Some(_st) = stop_time {
+            // Convert Instant to seconds since UNIX_EPOCH This is approximate
+            // but sufficient for display purposes which doesn't need precision
+            entity_commands.insert(ReplicatedSyncStopTime {
+                stopped_secs: completion_secs,
+            });
+        }
     }
 }
 
@@ -268,26 +279,26 @@ fn debug_replicated_entities(
     }
 }
 
-/// Cleanup system that despawns SimpleCopy sync entities older than 1 minute
-/// For now runs every minute, not a huge problem to have at most 2 minutes of
-/// Entities lying around in memory.
-///
-/// Don't keep these around for too long, TODO: is to figure out a timeframe
-/// that makes sense For now purging at a minute tops cause still in make it
-/// work mode. Make it right can come later. Need to learn more about lightyear
-/// and bevy if I'm honest before I can figure out the "right" way to do this.
-/// Still throwing spaget boxes at the wall learning how to bolt this stuff
-/// together. I'm sure I'll learn better ways but that is a future mitch problem.
+// Cleanup system that despawns SimpleCopy sync entities 60 seconds after completion
+// For now runs every minute, not a huge problem to have at most 2 minutes of
+// Entities lying around in memory.
+//
+// Don't keep these around for too long, TODO: is to figure out a timeframe
+// that makes sense For now purging at a minute tops cause still in make it
+// work mode. Make it right can come later. Need to learn more about lightyear
+// and bevy if I'm honest before I can figure out the "right" way to do this.
+// Still throwing spaget boxes at the wall learning how to bolt this stuff
+// together. I'm sure I'll learn better ways but that is a future mitch problem.
 fn despawn_simplecopies(
     mut commands: Commands,
     query: Query<
         (
             Entity,
-            &ReplicatedSyncStartTime,
+            &ReplicatedSyncComplete,
             &ReplicatedSource,
             &ReplicatedDest,
         ),
-        (With<crate::SimpleCopy>, With<ReplicatedSyncComplete>),
+        With<crate::SimpleCopy>,
     >,
 ) {
     if let Ok(duration) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -295,8 +306,8 @@ fn despawn_simplecopies(
 
         let mut cleaned_count = 0;
 
-        for (entity, start_time, source, dest) in query.iter() {
-            let too_dam_old = now.saturating_sub(start_time.started_secs);
+        for (entity, complete_time, source, dest) in query.iter() {
+            let time_since_completion = now.saturating_sub(complete_time.0);
 
             // TODO: wtf makes sense? 60 seconds is low enough to see it in the
             // monitor for now. Maybe make it configurable in the ecs itself and add
@@ -305,10 +316,14 @@ fn despawn_simplecopies(
             // bevy for a reason, and that ability to dynamically change anything at
             // runtime is one of the main ones. I bought into this ecs I might as
             // well use the whole dam ecs....
-            if too_dam_old > 60 {
+            let threshhold = 60;
+            if time_since_completion > threshhold {
                 debug!(
-                    "despawn SimpleCopy due to age: {}: {} -> {}",
-                    humantime::format_duration(std::time::Duration::from_secs(too_dam_old)),
+                    "despawn SimpleCopy {} as completion threshold {} exceeded: {} -> {}",
+                    humantime::format_duration(std::time::Duration::from_secs(
+                        time_since_completion
+                    )),
+                    humantime::format_duration(std::time::Duration::from_secs(threshhold)),
                     source.0.display(),
                     dest.0.display()
                 );
@@ -324,7 +339,7 @@ fn despawn_simplecopies(
                 "entity"
             };
             info!(
-                "despawned {} SimpleCopy sync {plural} due to age",
+                "despawned {} SimpleCopy sync {plural} after completion",
                 cleaned_count
             );
         }

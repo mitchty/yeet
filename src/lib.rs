@@ -24,10 +24,9 @@ pub struct Uuid(pub u128);
 #[derive(Debug, Default, Component)]
 pub struct SimpleCopy;
 
-// TODO: Should this be an enum? I kinda want a marker component for "totes
-// done" vs intermediate state
-#[derive(Debug, Default, Component)]
-pub struct SyncComplete;
+// Successful completion time in seconds since unix epoch
+#[derive(Debug, Component, Deref)]
+pub struct SyncComplete(pub u64);
 
 // Remote host specification (user@host)
 #[derive(Debug, Component, Deref)]

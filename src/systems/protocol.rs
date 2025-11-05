@@ -4,4 +4,7 @@ use bevy::prelude::*;
 pub struct SyncStartTime(pub std::time::Instant);
 
 #[derive(Component, Debug, Clone)]
+pub struct SyncStopTime(pub std::time::Instant);
+
+#[derive(Component, Debug, Clone)]
 pub struct CompletionTime(pub std::time::Instant);
