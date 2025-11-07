@@ -173,6 +173,27 @@
           release = yeet-release;
         };
 
+        # Makes updating everything at once a bit easier.
+        # nix run .#update
+        apps.update = {
+          type = "app";
+          program = "${
+            pkgs.writeShellApplication {
+              name = "update";
+              # runtimeInputs = [
+              #   pkgs.nix
+              #   pkgs.jq
+              # ];
+              text = ''
+                set -e
+                nix flake update
+                cargo update --verbose
+                cargo upgrade --verbose
+              '';
+            }
+          }/bin/update";
+        };
+
         devShells.default = craneLib.devShell {
           buildInputs = commonArgs.buildInputs;
           nativeBuildInputs = commonArgs.nativeBuildInputs;
