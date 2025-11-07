@@ -231,17 +231,11 @@ async fn run_uds(_ctx: TaskContext, event_sender: Arc<Mutex<UnboundedSender<RpcE
     use tokio_stream::wrappers::UnixListenerStream;
     use tonic::transport::Server;
 
-    extern crate directories;
-    use directories::ProjectDirs;
-
-    let proj_cache = ProjectDirs::from("net", "mitchty", "yeet")
-        .expect("fatal: could not determine project cache dir");
-
-    let path = proj_cache.cache_dir().join("local.uds");
-
     let event_sender = event_sender.clone();
 
     use std::fs;
+
+    let path = crate::get_uds_file().expect("ok then");
 
     // At some point this won't be in /tmp so mkdir on all parents will be in order
     let parent = path.parent();

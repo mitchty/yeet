@@ -3,11 +3,8 @@ use std::error::Error;
 
 use bevy::app::ScheduleRunnerPlugin;
 use bevy::prelude::*;
-use bevy_cronjob::prelude::*;
 
 use clap::{Parser, Subcommand};
-
-use lib::{Dest, Source};
 
 const VERSTR: &str = const_format::formatcp!(
     "{} {} {}",
@@ -39,21 +36,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum SubCommands {
-    /// Synchronize files between source and destination
-    Sync {
+    // TODO: Should make grpc a cargo feature if/when I find out if using bevy
+    // directly is a better idea or not.
+    /// Grpc related stuff
+    Grpc {
         /// Exclude paths
-        #[arg(short, long)]
-        exclude: Vec<String>,
-
-        /// This should be default true, but for now it's opt-in
-        #[arg(long, default_value_t = false)]
-        sync: bool,
-
-        /// Source directory
-        source: String,
-
-        /// Destination directory
-        dest: String,
+        #[arg(short, long, default_value_t = false)]
+        socketonly: bool,
     },
 
     /// Start in daemon mode
@@ -117,22 +106,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut appbinding = App::new();
 
     match cli.command {
-        // TODO: make this into a cp top level subcommand
-        SubCommands::Sync {
-            exclude,
-            sync,
-            source,
-            dest,
-        } => {
-            debug!("Syncing from {} to {}", source.clone(), dest.clone());
-            debug!("Exclude: {:?}", exclude.clone());
-            debug!("Sync flag: {}", sync.clone());
-            let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-                Duration::from_secs_f64(1.0 / 30.0),
-            )));
-            app.add_systems(Startup, move |cmd: Commands| {
-                setup_sync(cmd, source.as_str(), dest.as_str())
-            });
+        SubCommands::Grpc { socketonly } => {
+            if socketonly && let Ok(p) = lib::get_uds_file() {
+                println!("{}", p.display());
+            };
         }
         SubCommands::Serve { verbose: _verbose } => {
             let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
@@ -143,7 +120,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 lib::systems::loglevel::LogLevelPlugin {
                     level: Level::Trace,
                 },
-                CronJobPlugin,
                 bevy_tokio_tasks::TokioTasksPlugin {
                     make_runtime: Box::new(|| {
                         let mut runtime = tokio::runtime::Builder::new_current_thread();
@@ -227,15 +203,6 @@ fn toggle_logging_level_debug(
             .set_max_level(level.to_string())
             .expect("something wack broke bra");
     }
-}
-
-// TODO: removeme, make a oneshot cli command that sends an rpc for now.
-fn setup_sync(mut cmd: Commands, source: &str, dest: &str) -> Result {
-    cmd.spawn((
-        Source(std::path::PathBuf::from(source)),
-        Dest(std::path::PathBuf::from(dest)),
-    ));
-    Ok(())
 }
 
 fn setup_ctrlc_handler() {

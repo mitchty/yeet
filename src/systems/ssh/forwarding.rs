@@ -16,7 +16,9 @@ impl Plugin for Manager {
             (
                 setup_requested_forwarding,
                 check_forwarding_establishment,
-                cleanup_unused_forwarding.run_if(run_every_n_seconds(60.0)),
+                cleanup_unused_forwarding.run_if(bevy::time::common_conditions::on_timer(
+                    std::time::Duration::from_secs(60),
+                )),
             ),
         );
     }
@@ -303,17 +305,6 @@ fn cleanup_unused_forwarding(registry: ResMut<Registry>) -> Result {
     let max_idle = std::time::Duration::from_secs(600); // 10 minutes
     registry.cleanup_unused(max_idle);
     Ok(())
-}
-
-// I need to have a better option than bevy-cronjob, this is a crappy hack but I
-// want my every N second tasks to rollover instead of start at 0 of every
-// minute. Things drifting is OK for a lot of these systems, they can be off by a second and its not a big deal. This probably will become its own thing or a shared lib function.
-fn run_every_n_seconds(seconds: f32) -> impl FnMut() -> bool {
-    let mut timer = Timer::from_seconds(seconds, TimerMode::Repeating);
-    move || {
-        timer.tick(std::time::Duration::from_secs_f32(1.0 / 60.0));
-        timer.just_finished()
-    }
 }
 
 // TODO: learn to use events and On to do despawning vs hack lots of systems

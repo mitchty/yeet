@@ -32,7 +32,6 @@ tonic-prost = "~0.14.2"
 bevy-tokio-tasks = "~0.17.0"
 #bevy-tokio-tasks = { git = "https://github.com/mitchty/bevy-tokio-tasks", branch = "bevy-0.17" }
 tap = "~1.0.1"
-bevy_cronjob = "~0.7"
 tonic-reflection = "~0.14.2"
 tokio-stream = { version = "0.1.17", features = ["fs"] }
 eyre = "~0.6.12"

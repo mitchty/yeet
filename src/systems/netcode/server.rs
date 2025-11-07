@@ -24,10 +24,7 @@ pub struct ServerConfigBundle {
 
 impl Plugin for LightYearServerPlugin {
     fn build(&self, app: &mut App) {
-        assert!(app.is_plugin_added::<bevy_cronjob::CronJobPlugin>());
-
         app.add_plugins(ProtocolPlugin);
-
         app.add_plugins(ServerPlugins {
             tick_duration: std::time::Duration::from_secs_f64(1.0 / FIXED_TIMESTEP_HZ),
         });
@@ -40,7 +37,9 @@ impl Plugin for LightYearServerPlugin {
                 sync_entities_to_replicated,
                 update_completion_time,
                 update_stats,
-                despawn_simplecopies.run_if(bevy_cronjob::schedule_passed("every 1 minute")),
+                despawn_simplecopies.run_if(bevy::time::common_conditions::on_timer(
+                    std::time::Duration::from_secs(60),
+                )),
             ),
         );
 
@@ -51,7 +50,9 @@ impl Plugin for LightYearServerPlugin {
         app.add_systems(
             Update,
             // These things aren't really needed to run often.
-            debug_replicated_entities.run_if(bevy_cronjob::schedule_passed("every 1 minute")),
+            debug_replicated_entities.run_if(bevy::time::common_conditions::on_timer(
+                std::time::Duration::from_secs(60),
+            )),
         );
     }
 }

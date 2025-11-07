@@ -254,3 +254,10 @@ pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
     }
     Ok(())
 }
+
+pub fn get_uds_file() -> Result<std::path::PathBuf> {
+    let proj_cache = directories::ProjectDirs::from("net", "mitchty", "yeet")
+        .expect("couldn't determine project directory location");
+
+    Ok(proj_cache.cache_dir().join("local.uds"))
+}

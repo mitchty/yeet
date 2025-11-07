@@ -63,9 +63,7 @@ pub async fn connect(
         info!("attempting key auth with: {:?}", key_path);
         let key_pair = keys::load_secret_key(key_path, None)?;
         let key_with_alg = keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), None);
-        let auth_res = session
-            .authenticate_publickey(&user, key_with_alg)
-            .await;
+        let auth_res = session.authenticate_publickey(&user, key_with_alg).await;
 
         match auth_res {
             Ok(_) => debug!("key authentication successful"),

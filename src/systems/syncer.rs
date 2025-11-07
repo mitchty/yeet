@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy_cronjob::prelude::*;
 
 use crate::systems::ssh::forwarding::{Pending as ForwardingPending, Request as ForwardingRequest};
 use crate::systems::ssh::pool::{
@@ -51,16 +50,17 @@ struct SyncTask(bevy::tasks::Task<Result<(), String>>);
 // Adding an entity to Sync from source to dest kicks off the other work.
 impl Plugin for Syncer {
     fn build(&self, app: &mut App) {
-        // We don't add these ourselves, the caller is responsible for
-        // configuring shared plugins for Syncer for now. Future me gets to
-        // brain a less tacky way to do this.
-        assert!(app.is_plugin_added::<bevy_cronjob::CronJobPlugin>());
         // SSH operations require SSH pool and forwarding managers
         assert!(app.is_plugin_added::<crate::systems::ssh::Pool>());
         assert!(app.is_plugin_added::<crate::systems::ssh::Manager>());
 
         // Don't spam these debug messages too often, kinda silly.
-        app.add_systems(Update, update.run_if(schedule_passed("every 3 seconds")));
+        app.add_systems(
+            Update,
+            update.run_if(bevy::time::common_conditions::on_timer(
+                std::time::Duration::from_secs(7),
+            )),
+        );
 
         app.add_systems(
             Update,
@@ -141,13 +141,10 @@ fn check_sync_completion(
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)?
                         .as_secs();
-                    commands
-                        .entity(entity)
-                        .remove::<SyncTask>()
-                        .insert((
-                            SyncComplete(now),
-                            crate::systems::protocol::SyncStopTime(std::time::Instant::now()),
-                        ));
+                    commands.entity(entity).remove::<SyncTask>().insert((
+                        SyncComplete(now),
+                        crate::systems::protocol::SyncStopTime(std::time::Instant::now()),
+                    ));
                 }
                 Err(e) => {
                     error!("sync failed for entity {:?}: {}", entity, e);

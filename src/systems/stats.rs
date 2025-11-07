@@ -1,18 +1,17 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use bevy_cronjob::prelude::*;
-
 pub struct Stats;
 
 impl Plugin for Stats {
     fn build(&self, app: &mut App) {
-        // We don't add this ourselves, the caller is responsible for
-        // configuring the the cronjob plugin as its shared across Plugins
-        assert!(app.is_plugin_added::<bevy_cronjob::CronJobPlugin>());
-
         app.add_systems(Startup, move |cmd: Commands| startup(cmd))
-            .add_systems(Update, update.run_if(schedule_passed("every second")));
+            .add_systems(
+                Update,
+                update.run_if(bevy::time::common_conditions::on_timer(
+                    std::time::Duration::from_secs(1),
+                )),
+            );
     }
 }
 

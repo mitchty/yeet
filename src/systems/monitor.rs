@@ -1,6 +1,4 @@
 use bevy::prelude::*;
-use bevy_cronjob::prelude::*;
-use std::time::Duration;
 
 use super::netcode::protocol::{
     ReplicatedCompletionTime, ReplicatedDest, ReplicatedSimpleCopy, ReplicatedSource,
@@ -15,7 +13,9 @@ impl Plugin for MonitorPlugin {
         app.add_systems(
             Update,
             (
-                update_display.run_if(schedule_passed("every second")),
+                update_display.run_if(bevy::time::common_conditions::on_timer(
+                    std::time::Duration::from_secs(1),
+                )),
                 check_exit,
             ),
         )
@@ -26,7 +26,7 @@ impl Plugin for MonitorPlugin {
 fn check_exit(mut exit: MessageWriter<bevy::app::AppExit>) {
     use crossterm::event::{Event, KeyCode, KeyModifiers, poll, read};
 
-    if poll(Duration::from_millis(0)).unwrap_or(false)
+    if poll(std::time::Duration::from_millis(0)).unwrap_or(false)
         && let Ok(Event::Key(key)) = read()
         && ((key.code == KeyCode::Char('q') || key.code == KeyCode::Char('Q'))
             || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)))
@@ -121,7 +121,7 @@ fn update_display(
     if let Ok((uptime, mem, cpu)) = stats_query.single()
         && **uptime > 0
     {
-        let uptime_fmt = humantime::format_duration(Duration::from_secs(**uptime));
+        let uptime_fmt = humantime::format_duration(std::time::Duration::from_secs(**uptime));
         let memory = humansize::format_size(**mem, humansize::BINARY);
         output.push_str(&manager.apply(
             &format!(
@@ -185,7 +185,7 @@ fn update_display(
                 let elapsed = current_secs.saturating_sub(st.started_secs);
                 format!(
                     "{}",
-                    humantime::format_duration(Duration::from_secs(elapsed))
+                    humantime::format_duration(std::time::Duration::from_secs(elapsed))
                 )
             } else {
                 "?".to_string()
@@ -218,7 +218,7 @@ fn update_display(
                 let elapsed = current_secs.saturating_sub(ct.completed_secs);
                 format!(
                     "{} ago",
-                    humantime::format_duration(Duration::from_secs(elapsed))
+                    humantime::format_duration(std::time::Duration::from_secs(elapsed))
                 )
             } else {
                 "?".to_string()
@@ -228,7 +228,7 @@ fn update_display(
                 let duration_secs = stop.stopped_secs.saturating_sub(start.started_secs);
                 format!(
                     "took {}",
-                    humantime::format_duration(Duration::from_secs(duration_secs))
+                    humantime::format_duration(std::time::Duration::from_secs(duration_secs))
                 )
             } else {
                 String::new()

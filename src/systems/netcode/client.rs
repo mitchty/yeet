@@ -4,9 +4,6 @@ use bevy::prelude::*;
 use core::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-#[cfg(debug_assertions)]
-use bevy_cronjob::prelude::*;
-
 use lightyear::netcode::Key;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
@@ -78,7 +75,9 @@ impl Plugin for LightYearClientPlugin {
         #[cfg(debug_assertions)]
         app.add_systems(
             Update,
-            debug_received_entities.run_if(schedule_passed("every 7 seconds")),
+            debug_received_entities.run_if(bevy::time::common_conditions::on_timer(
+                std::time::Duration::from_secs(7),
+            )),
         );
     }
 }
