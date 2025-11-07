@@ -87,7 +87,7 @@ fn update(
     let len = query.iter().count();
 
     if len > 0 {
-        debug!("simplecopies: {}", len);
+        debug!("copies: {}", len);
     }
     // for (entity, lhs, rhs, uuid, _os) in &query {
     //     info!(

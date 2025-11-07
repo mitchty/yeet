@@ -50,6 +50,10 @@ enum SubCommands {
         /// Be verbose or not, doesn't do jack atm
         #[arg(short, long)]
         verbose: bool,
+
+        /// Default tick frequency
+        #[arg(short, long, default_value_t = 30)]
+        ticks: usize,
     },
 
     /// Monitor daemon state and sync progress
@@ -58,9 +62,9 @@ enum SubCommands {
         #[arg(long)]
         host: Option<String>,
 
-        /// Spawn test entities for demonstration
-        #[arg(long)]
-        test: bool,
+        /// Default tick frequency
+        #[arg(short, long, default_value_t = 5)]
+        ticks: usize,
     },
 }
 
@@ -111,9 +115,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("{}", p.display());
             };
         }
-        SubCommands::Serve { verbose: _verbose } => {
+        SubCommands::Serve { verbose: _verbose , ticks} => {
             let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-                Duration::from_secs_f64(1.0 / 20.0),
+                Duration::from_secs_f64(1.0 / ticks as f64),
             )));
 
             app.add_plugins((
@@ -140,11 +144,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             ));
             app.add_systems(Update, toggle_logging_level_debug);
         }
-        SubCommands::Monitor { test: _, .. } => {
+        SubCommands::Monitor { host: _, ticks } => {
             setup_ctrlc_handler();
 
             let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-                Duration::from_secs_f64(1.0 / 5.0),
+                Duration::from_secs_f64(1.0 / ticks as f64),
             )));
             app.add_plugins((
                 bevy::input::InputPlugin,
