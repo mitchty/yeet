@@ -66,6 +66,19 @@ enum SubCommands {
         #[arg(short, long, default_value_t = 5)]
         ticks: usize,
     },
+
+    /// Copy local only (v0) files/directory trees around
+    // Gate this to unix only cause I have no clue how to use a unix domain
+    // socket or equivalent on windows nor do I test there. That is a future
+    // mitch problem if ever.
+    #[cfg(unix)]
+    Cp {
+        /// Source path
+        source: String,
+
+        /// Destination path
+        dest: String,
+    },
 }
 
 // OK need to brain a skosh on how I'll handle syncing across systems in a
@@ -85,6 +98,73 @@ enum SubCommands {
 // bevy ecs related
 
 use log::Level;
+
+#[cfg(unix)]
+async fn request_local_cp(source: &str, dest: &str) -> Result<(), Box<dyn Error>> {
+    use std::path::Path;
+    use tokio::net::UnixStream;
+    use tonic::transport::{Endpoint, Uri};
+
+    // TODO: this needs more panache, : is perfectly valid within a uri but I
+    // need to add parsing logic to better handle host:some/path For now
+    // whatever this is good enough for government work v0 code.
+    if !source.contains(':') {
+        let source_path = Path::new(source);
+        if !source_path.exists() {
+            eprintln!(
+                "fatal: source '{}' does not exist, cannot copy non existent things",
+                source
+            );
+            std::process::exit(1);
+        }
+    }
+
+    let uds_path = lib::get_uds_file().expect("couldn't get uds path");
+    if !uds_path.exists() {
+        eprintln!(
+            "fatal: daemon unix domain socket {} not found. Is the daemon running locally?",
+            uds_path.display()
+        );
+        std::process::exit(1);
+    }
+
+    // For now lets only send these requests to the unix domain socket so we
+    // "know" we're only dealing with local stuff.
+    let channel = {
+        use hyper_util::rt::tokio::TokioIo;
+        use tower::service_fn;
+
+        let uds_path_clone = uds_path.clone();
+        Endpoint::try_from(format!("unix://{}", uds_path.display()))?
+            .connect_with_connector(service_fn(move |_uri: Uri| {
+                let path = uds_path_clone.clone();
+                async move {
+                    let stream = UnixStream::connect(path).await?;
+                    Ok::<_, std::io::Error>(TokioIo::new(stream))
+                }
+            }))
+            .await?
+    };
+
+    use lib::rpc::yeet::SyncSimpleCopyRequest;
+    use lib::rpc::yeet::yeet_client::YeetClient;
+
+    let mut client = YeetClient::new(channel);
+
+    let request = tonic::Request::new(SyncSimpleCopyRequest {
+        lhs: source.to_string(),
+        rhs: dest.to_string(),
+    });
+
+    let response = client.simple_copy(request).await?;
+    let uuid = response.into_inner().uuid;
+
+    // TODO: need a query grpc at some point to complement rpc like approach.
+    // This is intended for scripted usage of things.
+    println!("{uuid}");
+
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -115,7 +195,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("{}", p.display());
             };
         }
-        SubCommands::Serve { verbose: _verbose , ticks} => {
+        #[cfg(unix)]
+        SubCommands::Cp { source, dest } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            return runtime.block_on(request_local_cp(&source, &dest));
+        }
+        SubCommands::Serve {
+            verbose: _verbose,
+            ticks,
+        } => {
             let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
                 Duration::from_secs_f64(1.0 / ticks as f64),
             )));
@@ -234,7 +322,7 @@ fn setup_monitor_logging()
     // Enable raw mode for crossterm keyboard input
     crossterm::terminal::enable_raw_mode().expect("couldn't switch tty to raw mode from cooked");
 
-    // Set up panic hook to restore terminal on panic
+    // Set up panic hook to restore terminal on panic, best effort
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         _ = crossterm::terminal::disable_raw_mode();
