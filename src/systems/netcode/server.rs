@@ -36,6 +36,7 @@ impl Plugin for LightYearServerPlugin {
             (
                 sync_entities_to_replicated,
                 update_completion_time,
+                update_io_progress,
                 update_stats,
                 despawn_simplecopies.run_if(bevy::time::common_conditions::on_timer(
                     std::time::Duration::from_secs(60),
@@ -214,6 +215,30 @@ fn update_completion_time(
                 stopped_secs: completion_secs,
             });
         }
+    }
+}
+
+// Sync IoProgress to ReplicatedIoProgress for network replication
+fn update_io_progress(
+    mut commands: Commands,
+    query: Query<
+        (Entity, &crate::IoProgress),
+        (With<ReplicatedSource>, Without<crate::SyncComplete>),
+    >,
+) {
+    for (entity, progress) in query.iter() {
+        commands.entity(entity).insert(ReplicatedIoProgress {
+            dirs_found: progress.dirs_found,
+            files_found: progress.files_found,
+            total_size: progress.total_size,
+            dirs_written: progress.dirs_written,
+            files_written: progress.files_written,
+            bytes_written: progress.bytes_written,
+            completion_percent: progress.completion_percent,
+            error_count: progress.error_count,
+            skipped_count: progress.skipped_count,
+            throughput_bps: progress.throughput_bps,
+        });
     }
 }
 

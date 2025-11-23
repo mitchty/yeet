@@ -78,6 +78,10 @@ enum SubCommands {
 
         /// Destination path
         dest: String,
+
+        /// Number of parallel writer workers (default: CPU core count)
+        #[arg(short = 'w', long, default_value = None)]
+        writers: Option<usize>,
     },
 }
 
@@ -100,7 +104,11 @@ enum SubCommands {
 use log::Level;
 
 #[cfg(unix)]
-async fn request_local_cp(source: &str, dest: &str) -> Result<(), Box<dyn Error>> {
+async fn request_local_cp(
+    source: &str,
+    dest: &str,
+    writers: Option<usize>,
+) -> Result<(), Box<dyn Error>> {
     use std::path::Path;
     use tokio::net::UnixStream;
     use tonic::transport::{Endpoint, Uri};
@@ -154,6 +162,7 @@ async fn request_local_cp(source: &str, dest: &str) -> Result<(), Box<dyn Error>
     let request = tonic::Request::new(SyncSimpleCopyRequest {
         lhs: source.to_string(),
         rhs: dest.to_string(),
+        writers: writers.map(|w| w as u32),
     });
 
     let response = client.simple_copy(request).await?;
@@ -196,9 +205,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
         }
         #[cfg(unix)]
-        SubCommands::Cp { source, dest } => {
+        SubCommands::Cp {
+            source,
+            dest,
+            writers,
+        } => {
             let runtime = tokio::runtime::Runtime::new()?;
-            return runtime.block_on(request_local_cp(&source, &dest));
+            return runtime.block_on(request_local_cp(&source, &dest, writers));
         }
         SubCommands::Serve {
             verbose: _verbose,
@@ -227,6 +240,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 lib::systems::ssh::Pool,
                 lib::systems::ssh::Manager,
                 lib::systems::syncer::Syncer,
+                lib::systems::io_bridge::IoBridge,
                 lib::systems::grpc::GrpcPlugin,
                 lib::systems::netcode::server::LightYearServerPlugin,
             ));

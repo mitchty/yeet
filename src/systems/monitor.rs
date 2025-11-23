@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 
 use super::netcode::protocol::{
-    ReplicatedCompletionTime, ReplicatedDest, ReplicatedSimpleCopy, ReplicatedSource,
-    ReplicatedSyncComplete, ReplicatedSyncStartTime, ReplicatedSyncStopTime, ReplicatedUuid,
+    ReplicatedCompletionTime, ReplicatedDest, ReplicatedIoProgress, ReplicatedSimpleCopy,
+    ReplicatedSource, ReplicatedSyncComplete, ReplicatedSyncStartTime, ReplicatedSyncStopTime,
+    ReplicatedUuid,
 };
 use super::stats::{Cpu, Mem, Uptime};
 
@@ -81,6 +82,7 @@ fn update_display(
             &ReplicatedSource,
             &ReplicatedDest,
             &ReplicatedUuid,
+            Option<&ReplicatedIoProgress>,
             Option<&ReplicatedSyncComplete>,
             Option<&ReplicatedCompletionTime>,
             Option<&ReplicatedSyncStartTime>,
@@ -140,11 +142,13 @@ fn update_display(
     let mut in_progress = Vec::new();
     let mut completed = Vec::new();
 
-    for (source, dest, uuid, complete, completion_time, start_time, stop_time) in query.iter() {
+    for (source, dest, uuid, io_progress, complete, completion_time, start_time, stop_time) in
+        query.iter()
+    {
         if complete.is_some() {
             completed.push((source, dest, uuid, completion_time, start_time, stop_time));
         } else {
-            in_progress.push((source, dest, uuid, start_time));
+            in_progress.push((source, dest, uuid, io_progress, start_time));
         }
     }
 
@@ -175,7 +179,7 @@ fn update_display(
         }
 
         // in progress stuff
-        for (source, dest, uuid, start_time) in in_progress {
+        for (source, dest, uuid, io_progress, start_time) in in_progress {
             let uuid_str = uuid::Uuid::from_u128(uuid.0);
             let running_for = if let Some(st) = start_time {
                 let current_secs = std::time::SystemTime::now()
@@ -191,17 +195,73 @@ fn update_display(
                 "?".to_string()
             };
 
-            output.push_str(&manager.apply(
-                "in progress",
-                ansi_term::Style::default().fg(ansi_term::Colour::Green),
-            ));
+            // output.push_str(&manager.apply(
+            //     "in progress",
+            //     ansi_term::Style::default().fg(ansi_term::Colour::Green),
+            // ));
+
+            // Add progress information if available
+            let progress_str = if let Some(progress) = io_progress {
+                if progress.files_found > 0 {
+                    let bytes_written_str =
+                        humansize::format_size(progress.bytes_written, humansize::BINARY);
+                    let total_size_str =
+                        humansize::format_size(progress.total_size, humansize::BINARY);
+
+                    let mut extras = Vec::new();
+                    if progress.error_count > 0 {
+                        extras.push(format!("{} errors", progress.error_count));
+                    }
+                    if progress.skipped_count > 0 {
+                        extras.push(format!("{} skipped", progress.skipped_count));
+                    }
+
+                    // Format throughput
+                    let throughput_str = if progress.throughput_bps > 0.0 {
+                        format!(
+                            " @ {}/s",
+                            humansize::format_size(
+                                progress.throughput_bps as u64,
+                                humansize::BINARY
+                            )
+                        )
+                    } else {
+                        String::new()
+                    };
+
+                    let extras_str = if !extras.is_empty() {
+                        format!(" {}", extras.join(", "))
+                    } else {
+                        String::new()
+                    };
+
+                    format!(
+                        " files: {}/{} dirs: {}/{} {}/{} ~{:.1}%{}{}",
+                        progress.files_written,
+                        progress.files_found,
+                        progress.dirs_written,
+                        progress.dirs_found,
+                        bytes_written_str,
+                        total_size_str,
+                        progress.completion_percent,
+                        throughput_str,
+                        extras_str
+                    )
+                } else {
+                    " [scanning...]".to_string()
+                }
+            } else {
+                String::new()
+            };
+
             output.push_str(&manager.apply(
                 &format!(
-                    " {}:\t{} → {} {}{nl}",
-                    running_for,
+                    " {}{nl} {}{nl}   {} → {} {}{nl}",
+                    uuid_str,
+                    progress_str,
                     source.0.display(),
                     dest.0.display(),
-                    uuid_str
+                    running_for
                 ),
                 ansi_term::Style::default(),
             ));

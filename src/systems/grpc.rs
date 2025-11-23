@@ -94,7 +94,12 @@ fn handle_rpc_event(
 
     for event in events.read() {
         match event {
-            RpcEvent::SimpleCopySync { lhs, rhs, uuid } => {
+            RpcEvent::SimpleCopySync {
+                lhs,
+                rhs,
+                uuid,
+                writers,
+            } => {
                 debug!(
                     "got a simple copy sync request lhs {lhs}, rhs {rhs}, uuid {uuid} {}",
                     uuid::Uuid::from_u128(*uuid)
@@ -119,6 +124,9 @@ fn handle_rpc_event(
                     warn!("Remote dest not yet implemented");
                 }
                 entity.insert(Dest(rhs_path));
+
+                // Add writer count if specified
+                entity.insert(crate::NumWriters(*writers));
             }
             RpcEvent::LogLevel { level } => {
                 debug!("handling loglevel event: {:?}", level);

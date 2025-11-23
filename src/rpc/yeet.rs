@@ -55,11 +55,18 @@ impl Yeet for MyYeet {
         let lhs = binding.lhs.clone();
         let rhs = binding.rhs.clone();
 
+        let writers = binding.writers.map(|w| w as usize);
+
         let s = self
             .event_sender
             .lock()
             .expect("could not lock event sender");
-        let _ = s.send(RpcEvent::SimpleCopySync { lhs, rhs, uuid });
+        let _ = s.send(RpcEvent::SimpleCopySync {
+            lhs,
+            rhs,
+            uuid,
+            writers,
+        });
 
         let reply = SyncSimpleCopyReply {
             uuid: uuid::Uuid::from_u128(uuid).to_string(),

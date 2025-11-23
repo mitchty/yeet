@@ -1,3 +1,4 @@
+pub mod io;
 pub mod rpc;
 pub mod systems;
 
@@ -24,6 +25,10 @@ pub struct Uuid(pub u128);
 #[derive(Debug, Default, Component)]
 pub struct SimpleCopy;
 
+// Number of writer workers to use (None = use CPU count)
+#[derive(Debug, Component, Deref)]
+pub struct NumWriters(pub Option<usize>);
+
 // Successful completion time in seconds since unix epoch
 #[derive(Debug, Component, Deref)]
 pub struct SyncComplete(pub u64);
@@ -45,6 +50,7 @@ pub enum RpcEvent {
         lhs: String,
         rhs: String,
         uuid: u128,
+        writers: Option<usize>,
     },
     LogLevel {
         level: crate::rpc::loglevel::Level,
@@ -61,6 +67,35 @@ use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Resource, Clone)]
 pub struct SyncEventSender(pub Arc<Mutex<UnboundedSender<RpcEvent>>>);
+
+/// Bevy resource wrapping the I/O subsystem
+#[derive(Resource, Clone)]
+pub struct IoSubsystemResource(pub io::IoSubsystem);
+
+/// Component that holds a handle to an active I/O operation
+#[derive(Component, Clone)]
+pub struct IoOperation {
+    /// UUID for this operation
+    pub uuid: u128,
+
+    /// Shared I/O subsystem (shared across operations)
+    pub subsystem: io::IoSubsystem,
+}
+
+/// Component containing cached progress information (updated at ~10Hz)
+#[derive(Component, Clone, Debug, Default)]
+pub struct IoProgress {
+    pub dirs_found: u64,
+    pub files_found: u64,
+    pub total_size: u64,
+    pub dirs_written: u64,
+    pub files_written: u64,
+    pub bytes_written: u64,
+    pub completion_percent: f64,
+    pub error_count: usize,
+    pub skipped_count: u64,
+    pub throughput_bps: f64,
+}
 
 // This is crap code but whatever its good enough for gov work
 //
@@ -88,10 +123,10 @@ pub fn dirwalk(dir: &std::path::Path, data: &mut Vec<std::path::PathBuf>) -> std
 // This is *mostly* the same as the clap struct.
 #[derive(Default, Debug)]
 pub struct SyncConfig {
-    pub excludes: Vec<String>, // TODO should probably be Arc not Vec, unless I want to change excludes at runtime? OLD AF CODE NEEDS TO MOVE INTO ECS
-    pub sync: bool,
-    pub inotify: bool,
-    pub tasks: bool,
+    // pub excludes: Vec<String>, // TODO should probably be Arc not Vec, unless I want to change excludes at runtime? OLD AF CODE NEEDS TO MOVE INTO ECS
+    // pub sync: bool,
+    // pub inotify: bool,
+    // pub tasks: bool,
     pub lhs: std::path::PathBuf,
     pub rhs: std::path::PathBuf,
 }
@@ -152,28 +187,35 @@ fn guard_invalid<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
     Ok(())
 }
 
-// SimpleCopy sync function, note this isn't async so it can run in bevy.
-pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
-    from: U,
-    to: V,
-    config: SyncConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+// Local SimpleCopy syncing function, like cp so its oneshot lhs -> rhs, note
+// this isn't async so it can run in bevy (for now...)
+//
+// Removals aren't handled at all yet. Just make rhs reflect what is in lhs.
+//
+// Note, in future I need to collect all possible errors in some sort of
+// trampoline Error kind of Vec struct. For now like cp as soon as I hit an
+// error die.
+pub fn sync(config: SyncConfig) -> Result<(), Box<dyn std::error::Error>> {
     let mut stack = Vec::new();
-    stack.push(std::path::PathBuf::from(from.as_ref()));
+    stack.push(config.lhs.clone());
 
-    let src = std::path::PathBuf::from(from.as_ref());
-    let dest = std::path::PathBuf::from(to.as_ref());
+    let src = config.lhs.clone();
+    let dest = config.rhs.clone();
 
-    let output_root = std::path::PathBuf::from(to.as_ref());
-    let input_root = std::path::PathBuf::from(from.as_ref()).components().count();
+    // let output_root = config.lhs.clone();
+    // let input_root = config.rhs.clone();
+    let input_root = src.parent();
+    let output_root = dest.clone();
 
-    guard_invalid(from, to)?;
+    // TODO: This likely needs to be lifted out of there and a guard needs to be
+    // done outside of any sync code as a prereq to actual sync. Especially when
+    // I start making cp over ssh work.
+    guard_invalid(config.lhs, config.rhs)?;
 
-    if config.sync {
-        println!("yeet: {:?} -> {:?}", src, dest);
-    } else {
-        return Ok(());
-    }
+    info!("HACK sync: {:?} -> {:?}", src, dest);
+    info!("HACK root: {:?} -> {:?}", input_root, output_root);
+
+    let relpath_start = dest.components().count();
 
     // TODO hard coded to start transferring files from the get-go via BFS
     // traversal (aka iff we find a dir we throw that onto the priority queue
@@ -186,13 +228,11 @@ pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
     // TODO Async rust this to be MPSC to submit to a workqueue thread so that
     // notify events can start immediately and take priority over bulk transfers.
     while let Some(working_path) = stack.pop() {
-        println!("sync: {:?}", &working_path);
-
+        trace!("sync: {:?}", &working_path);
         // Generate a relative path
-        let src: std::path::PathBuf = working_path.components().skip(input_root).collect();
-        println!("wtf: src now {:?}", src);
+        let src: std::path::PathBuf = working_path.components().skip(relpath_start).collect();
 
-        // Create a destination if missing
+        // Create destination if missing, if it fails thats a human problem to fix for now
         let dest = if src.components().count() == 0 {
             output_root.clone()
         } else {
@@ -200,7 +240,7 @@ pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
         };
 
         if std::fs::metadata(&dest).is_err() {
-            println!("mkdir: {:?}", dest);
+            trace!("dest missing mkdir: {:?}", dest);
             std::fs::create_dir_all(&dest)?;
         }
 
@@ -208,25 +248,25 @@ pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
             let entry = entry?;
             let path = entry.path();
 
-            let mut ignore = false;
+            //            let mut ignore = false;
 
             if let Some(basename) = path.as_path().file_name() {
-                //                println!("dbg: dirname {:?}", basename);
+                trace!("dirname {:?}", basename);
 
-                for s in &config.excludes {
-                    if let Some(bs) = basename.to_str()
-                        && bs == s
-                        && basename.to_str() == Some(s)
-                    {
-                        ignore = true;
-                        continue;
-                    }
-                }
+                // for s in &config.excludes {
+                //     if let Some(bs) = basename.to_str()
+                //         && bs == s
+                //         && basename.to_str() == Some(s)
+                //     {
+                //         ignore = true;
+                //         continue;
+                //     }
+                // }
             }
 
-            if ignore {
-                continue;
-            }
+            // if ignore {
+            //     continue;
+            // }
 
             // Only operate on dirs and files, anything else, fifo/etc... is not worth pondering
             if path.is_dir() {
@@ -242,11 +282,11 @@ pub fn sync<U: AsRef<std::path::Path>, V: AsRef<std::path::Path>>(
                         }
 
                         let dest_path = dest.join(filename);
-                        println!("cp: {:?} -> {:?}", &path, &dest_path);
+                        trace!("cp: {:?} -> {:?}", &path, &dest_path);
                         std::fs::copy(&path, &dest_path)?;
                     }
                     None => {
-                        println!("error: cp: {:?}", path);
+                        error!("cp: {:?}", path);
                     }
                 }
             }

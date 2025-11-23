@@ -8,6 +8,7 @@ service Yeet {
 message SyncSimpleCopyRequest {
   string lhs = 1;
   string rhs = 2;
+  optional uint32 writers = 3;
 }
 
 message SyncSimpleCopyReply {

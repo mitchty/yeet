@@ -1,23 +1,19 @@
 use bevy::prelude::*;
+use bevy_tokio_tasks::TokioTasksRuntime;
 
 use crate::systems::ssh::forwarding::{Pending as ForwardingPending, Request as ForwardingRequest};
 use crate::systems::ssh::pool::{
     Pending as ConnectionPending, Ref as ConnectionRef, Request as ConnectionRequest,
 };
-use crate::{Dest, RemoteHost, SimpleCopy, Source, SshForwarding, SyncComplete, Uuid};
+use crate::{
+    Dest, IoOperation, IoProgress, RemoteHost, SimpleCopy, Source, SshForwarding, SyncComplete,
+    Uuid,
+};
 
 pub struct Syncer;
 
-// We'll start out abusing the builtin bevy IoTaskPool, bevy tokio tasks is ok
-// but I was only wanting to use it for a grpc<->bevy bridge where it makes
-// sense.
-//
-// But it might make sense to use that for bridging events from
-// epoll()/ionotify/ebpf in future too.
-//
-// This is a "future mitch" task from past jerk mitch to figure out
-#[derive(Component)]
-struct SyncTask(bevy::tasks::Task<Result<(), String>>);
+// Note: Sync tasks are now handled by the IoSubsystem and IoOperation component.
+// The old SyncTask component has been removed.
 
 // The plugin/system that handles syncs from the top level
 //
@@ -55,9 +51,10 @@ impl Plugin for Syncer {
         assert!(app.is_plugin_added::<crate::systems::ssh::Manager>());
 
         // Don't spam these debug messages too often, kinda silly.
+        #[cfg(debug_assertions)]
         app.add_systems(
             Update,
-            update.run_if(bevy::time::common_conditions::on_timer(
+            debug_hack.run_if(bevy::time::common_conditions::on_timer(
                 std::time::Duration::from_secs(7),
             )),
         );
@@ -68,7 +65,6 @@ impl Plugin for Syncer {
                 request_ssh_connections,
                 request_ssh_forwarding.after(request_ssh_connections),
                 spawn_sync_tasks.after(request_ssh_forwarding),
-                check_sync_completion.after(spawn_sync_tasks),
             ),
         );
     }
@@ -78,80 +74,92 @@ impl Plugin for Syncer {
 // this tick) when run.
 //
 // Note, for now we'll only deal with things with a SimpleCopy marker
-fn update(
+#[cfg(debug_assertions)]
+fn debug_hack(
     query: Query<
-        (Entity, &Source, &Dest, &Uuid, &SimpleCopy),
-        (Without<SyncComplete>, With<SyncTask>),
+        (
+            Entity,
+            &Source,
+            &Dest,
+            &Uuid,
+            &SimpleCopy,
+            Option<&IoProgress>,
+        ),
+        (Without<SyncComplete>, With<IoOperation>),
     >,
-) -> Result {
+) -> bevy::prelude::Result {
     let len = query.iter().count();
 
     if len > 0 {
-        debug!("copies: {}", len);
+        trace!("active copies: {}", len);
+        for (_entity, _lhs, _rhs, _uuid, _marker, progress) in &query {
+            if let Some(progress) = progress {
+                if progress.files_found > 0 || progress.files_written > 0 {
+                    trace!(
+                        "  progress: {}/{} files, {}/{} dirs, {:.1}% complete",
+                        progress.files_written,
+                        progress.files_found,
+                        progress.dirs_written,
+                        progress.dirs_found,
+                        progress.completion_percent
+                    );
+                }
+            }
+        }
     }
-    // for (entity, lhs, rhs, uuid, _os) in &query {
-    //     info!(
-    //         "simplecopy sync {entity} {}->{} uuid {}",
-    //         lhs.display(),
-    //         rhs.display(),
-    //         uuid::Uuid::from_u128(uuid.0)
-    //     );
-    // }
     Ok(())
 }
 
 fn spawn_sync_tasks(
     mut commands: Commands,
-    query: Query<(Entity, &Source, &Dest, &SimpleCopy), (Without<SyncTask>, Without<SyncComplete>)>,
-) -> Result {
-    let task_pool = bevy::tasks::IoTaskPool::get();
-
-    for (entity, source, dest, _ignored) in &query {
+    runtime: ResMut<TokioTasksRuntime>,
+    query: Query<
+        (
+            Entity,
+            &Source,
+            &Dest,
+            &Uuid,
+            &SimpleCopy,
+            Option<&crate::NumWriters>,
+        ),
+        (Without<IoOperation>, Without<SyncComplete>),
+    >,
+) -> bevy::prelude::Result {
+    for (entity, source, dest, uuid, _ignored, num_writers) in &query {
         let source = source.0.clone();
         let dest = dest.0.clone();
+        let uuid = uuid.0;
 
-        // SimpleCopy is a glorified cp for now.
+        // SimpleCopy using the new I/O subsystem
         info!(
-            "spawning simplecopy sync task {} -> {}",
+            "spawning simplecopy I/O operation {} -> {} (uuid: {})",
             source.display(),
-            dest.display()
+            dest.display(),
+            uuid::Uuid::from_u128(uuid)
         );
 
-        let task = task_pool.spawn(async move { simplecopy(source, dest).await });
+        // Create a new I/O subsystem for this operation
+        let mut subsystem = crate::io::IoSubsystem::new();
+        let subsystem_clone = subsystem.clone();
+
+        // Get the number of writers (None = use CPU count)
+        let writers = num_writers.and_then(|nw| nw.0);
+
+        // Start the I/O subsystem in a tokio task using bevy_tokio_tasks
+        runtime.spawn_background_task(move |_ctx| async move {
+            if let Err(e) = subsystem.start(uuid, source, dest, writers).await {
+                error!("I/O subsystem failed to start: {}", e);
+            }
+        });
 
         commands.entity(entity).insert((
-            SyncTask(task),
+            IoOperation {
+                uuid,
+                subsystem: subsystem_clone,
+            },
+            IoProgress::default(),
             crate::systems::protocol::SyncStartTime(std::time::Instant::now()),
         ));
-    }
-    Ok(())
-}
-
-fn check_sync_completion(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut SyncTask)>,
-) -> Result {
-    for (entity, mut sync_task) in &mut query {
-        if let Some(result) =
-            futures_lite::future::block_on(futures_lite::future::poll_once(&mut sync_task.0))
-        {
-            match result {
-                Ok(_) => {
-                    info!("sync completed for entity {:?}", entity);
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)?
-                        .as_secs();
-                    commands.entity(entity).remove::<SyncTask>().insert((
-                        SyncComplete(now),
-                        crate::systems::protocol::SyncStopTime(std::time::Instant::now()),
-                    ));
-                }
-                Err(e) => {
-                    error!("sync failed for entity {:?}: {}", entity, e);
-                    commands.entity(entity).remove::<SyncTask>();
-                }
-            }
-        }
     }
     Ok(())
 }
@@ -167,12 +175,12 @@ fn request_ssh_connections(
             Without<ConnectionPending>,
         ),
     >,
-) -> Result {
+) -> bevy::prelude::Result {
     for (entity, remote_host, _) in &query {
         let host_spec = remote_host.0.clone();
 
         info!(
-            "Requesting SSH connection to {} for entity {:?}",
+            "requesting SSH connection to {} for entity {:?}",
             host_spec, entity
         );
 
@@ -194,12 +202,12 @@ fn request_ssh_forwarding(
             Without<ForwardingPending>,
         ),
     >,
-) -> Result {
+) -> bevy::prelude::Result {
     for (entity, _ssh_ref) in &query {
-        let remote_port = 50051; // gRPC port
+        let remote_port = 50051;
 
         info!(
-            "Requesting SSH forwarding for entity {:?} to port {}",
+            "requesting SSH forwarding for entity {:?} to port {}",
             entity, remote_port
         );
 
@@ -210,20 +218,4 @@ fn request_ssh_forwarding(
     Ok(())
 }
 
-async fn simplecopy(source: std::path::PathBuf, dest: std::path::PathBuf) -> Result<(), String> {
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-
-    let entries = std::fs::read_dir(&source).map_err(|e| e.to_string())?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-
-        if path.is_file() {
-            let dest_path = dest.join(entry.file_name());
-            std::fs::copy(&path, &dest_path).map_err(|e| e.to_string())?;
-        }
-    }
-
-    Ok(())
-}
+// simplecopy function removed - now handled by IoSubsystem

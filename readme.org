@@ -5,3 +5,29 @@ Right now this is a "hold my beer" idea. Do not use this until this readme is up
 I had a crazy idea and decided to see if I can pull a rabbit out of my butt and make it work.
 
 I repeat: DO NOT USE THIS unless you're crazy like me.
+
+** Current pre alpha/do not use me status, I'm not kidding don't use this for actual data that matters
+
+As of this readme update. Yeet can basically act like a faster local cp or rsync command. I wouldn't recommend it though as error handling etc... is all not yet really brained through so if you want to use it.... if it kicks your girlfriend, steals your dog, and marries your truck thats on you not me.
+
+But for a taste of things to come you can do this to use it. Note I only test on macos/nixos right now. Any other platform may work but I doubt it.
+
+Run the daemon/server process, this dealio does the actual i/o work.
+
+#+begin_src sh
+nix run github:mitchty/yeet -- serve
+#+end_src
+
+optional: run the monitor client to watch as stuff happens
+
+#+begin_src sh
+nix run github:mitchty/yeet -- monitor
+#+end_src
+
+Copy crap from /lhs to /rhs. Errors are essentially ignored for now and not yet even bubbled out to the monitor tui. I got lazy and to be honest want to start getting inter node grpc between nodes over ssh working.
+
+#+begin_src sh
+nix run github:mitchty/yeet -- cp /lhs /rhs
+#+end_src
+
+I'll repeat, don't use this yet. At least without backups in which case go nuts I guess, I do. Note that yeet cp right now returns a uuid for work. There is no rpc behind the scenes to do a blocking wait or to query for yeet cp to do more work than that for now. Like I said this whole things not entirely thought through. Don't use it.

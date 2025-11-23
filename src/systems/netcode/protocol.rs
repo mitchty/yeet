@@ -51,6 +51,20 @@ pub struct ReplicatedCompletionTime {
     pub completed_secs: u64,
 }
 
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+pub struct ReplicatedIoProgress {
+    pub dirs_found: u64,
+    pub files_found: u64,
+    pub total_size: u64,
+    pub dirs_written: u64,
+    pub files_written: u64,
+    pub bytes_written: u64,
+    pub completion_percent: f64,
+    pub error_count: usize,
+    pub skipped_count: u64,
+    pub throughput_bps: f64,
+}
+
 #[derive(Clone)]
 pub struct ProtocolPlugin;
 
@@ -70,6 +84,7 @@ impl Plugin for ProtocolPlugin {
         app.register_component::<ReplicatedSyncStartTime>();
         app.register_component::<ReplicatedSyncStopTime>();
         app.register_component::<ReplicatedCompletionTime>();
+        app.register_component::<ReplicatedIoProgress>();
 
         app.register_component::<crate::systems::stats::Uptime>();
         app.register_component::<crate::systems::stats::Mem>();

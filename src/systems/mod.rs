@@ -4,6 +4,7 @@
 pub mod build;
 pub mod grpc;
 pub mod inode;
+pub mod io_bridge;
 pub mod loglevel;
 pub mod monitor;
 pub mod netcode;
