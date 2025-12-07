@@ -13,10 +13,7 @@ clap = { version = "~4.5.53", features = ["derive"] }
 humansize = "~2.1.3"
 humantime = "~2.3.0"
 log = "~0.4.29"
-# TODO: Why does the crates.io package fail to work on macos?
-#sysinfo = "~0.37.2"
 sysinfo = { git = "https://github.com/GuillaumeGomez/sysinfo", tag = "v0.37.2" }
-#sysinfo = { path = "/Users/mitch/src/pub/github.com/GuillaumeGomez/sysinfo" }
 thiserror = "~2.0.17"
 # aya = { version = "0.13.1", features = ["async_tokio", "tokio"] }
 uuid = { version = "~1.18.1", features = ["fast-rng", "v4"] }
@@ -40,7 +37,7 @@ bevy = { version = "~0.17", default-features = false, features = [
   "libm",
   "async-io",
   "multi_threaded",
-#  "sysinfo_plugin",
+#  "sysinfo_plugin", # FUTURE MITCH TASK maybe upstream the sysinfo stuff I've got so I can do more with bevy builtin sysinfo? They seem to conflict with each other.
   "bevy_log",
   "async_executor",
 ] }
