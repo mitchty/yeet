@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use super::LARGE_FILE_THRESHOLD;
 use super::error::IoError;
+use super::exclude::ExcludeRules;
 use super::metadata::{DirMetadata, FileMetadata};
 use super::progress::Progress;
 use super::work::WorkItem;
@@ -20,6 +21,7 @@ pub struct ReaderPool {
     errors: Arc<Mutex<Vec<IoError>>>,
     shutdown: Arc<Mutex<bool>>,
     done: Arc<Mutex<bool>>,
+    exclude_rules: ExcludeRules,
 }
 
 impl ReaderPool {
@@ -39,6 +41,7 @@ impl ReaderPool {
             errors,
             shutdown: Arc::new(Mutex::new(false)),
             done,
+            exclude_rules: ExcludeRules::new(),
         }
     }
 
@@ -250,19 +253,29 @@ impl ReaderPool {
                     *items_since_update += 1;
                 }
                 FileKind::Directory => {
-                    // Save subdirectory for later processing
-                    subdirs.push((entry_path, entry_relative));
+                    if self.exclude_rules.should_exclude_dir(&file_name) {
+                        tracing::info!("excluding directory: {}", entry_path.display());
+                        *local_skipped += 1;
+                        *items_since_update += 1;
+                    } else {
+                        subdirs.push((entry_path, entry_relative));
+                    }
                 }
                 FileKind::File => {
-                    // Handle regular file
-                    self.enqueue_file_blocking(
-                        entry_path,
-                        entry_relative,
-                        metadata,
-                        local_files_found,
-                        local_total_size,
-                    );
-                    *items_since_update += 1;
+                    if self.exclude_rules.should_exclude_file(&file_name) {
+                        tracing::info!("excluding file: {}", entry_path.display());
+                        *local_skipped += 1;
+                        *items_since_update += 1;
+                    } else {
+                        self.enqueue_file_blocking(
+                            entry_path,
+                            entry_relative,
+                            metadata,
+                            local_files_found,
+                            local_total_size,
+                        );
+                        *items_since_update += 1;
+                    }
                 }
                 FileKind::Unknown => {
                     // Skip unknown file types

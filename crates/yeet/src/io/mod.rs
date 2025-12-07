@@ -1,4 +1,5 @@
 pub mod error;
+pub mod exclude;
 pub mod metadata;
 pub mod progress;
 pub mod reader;
