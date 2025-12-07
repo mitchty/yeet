@@ -1,34 +1,25 @@
 {
-  description = "WIP DO NOT USE THIS IS A TOTAL HOLD MY BEER EXPERIMENT";
+  description = "WIP DO NOT USE THIS IS A TOTAL HOLD MY BEER EXPERIMENT yeet files and dirs across systems";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    #nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    #nixpkgs.url = "github:NixOS/nixpkgs/7e297ddff44a3cc93673bb38d0374df8d0ad73e4";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
     crane.url = "github:ipetkov/crane";
 
     flake-utils.url = "github:numtide/flake-utils";
 
-    fenix = {
-      url = "github:nix-community/fenix";
-      #      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    fenix.url = "github:nix-community/fenix";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
 
-    treefmt-nix = {
-      url = "github:numtide/treefmt-nix";
-      #      inputs.nixpkgs.follows = "nixpkgs";
+    advisory-db = {
+      url = "github:rustsec/advisory-db";
+      flake = false;
     };
   };
 
-  # TODO for now I'm only building static linux binaries thats where I needs
-  # this stuff. I'll be sure it works on macos but I'll save that for later.
-  #
-  # What I want to test is linux specific anyway. When I get a new macbook air I
-  # can put in the effort to port things.
   outputs =
     { self, ... }@inputs:
-    inputs.flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-darwin" ] (
+    inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import inputs.nixpkgs {
@@ -42,6 +33,20 @@
           ];
         };
 
+        inherit (pkgs) lib;
+
+        craneLib = inputs.crane.mkLib pkgs;
+
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            (lib.fileset.fileFilter (file: file.hasExt "rs") ./.)
+            (lib.fileset.fileFilter (file: file.hasExt "toml") ./.)
+            (lib.fileset.fileFilter (file: file.hasExt "proto") ./crates/yeet/src/proto)
+            ./Cargo.lock
+          ];
+        };
+
         treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
@@ -51,76 +56,64 @@
             protolint.enable = true;
           };
         };
-        inherit (pkgs) lib;
 
-        # TODO: iff I set this up to run on nixos arm don't be so explicit
-        staticToolchain = with pkgs; [
-          (
-            fenix.targets.x86_64-unknown-linux-musl.stable.withComponents [
-              "cargo"
-              "clippy"
-              "rust-src"
-              "rustc"
-              "rustfmt"
-            ]
-            ++ pkgs.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std
-          )
-        ];
-
-        commonToolchain = with pkgs; [
-          (fenix.complete.withComponents [
-            "cargo"
-            "clippy"
-            "rust-src"
-            "rustc"
-            "rustfmt"
-          ])
-          rust-analyzer-nightly
-        ];
-
-        toolchain = pkgs.fenix.combine commonToolchain; # (if pkgs.stdenv.isLinux then muslToolchain else commonToolchain);
-
-        craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
-
-        srcRoot = ./.;
-
-        version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
-
-        src = lib.fileset.toSource {
-          root = srcRoot;
-          fileset = lib.fileset.unions [
-            (craneLib.fileset.commonCargoSources srcRoot)
-            (lib.fileset.maybeMissing ./proto)
-            (lib.fileset.maybeMissing ./src)
-          ];
-        };
-
+        # Common arguments can be set here to avoid repeating them later
         commonArgs = {
           inherit src;
           strictDeps = true;
+
+          nativeBuildInputs = [ pkgs.git ];
+
           buildInputs =
             with pkgs;
             [
               protobuf
               grpcurl
             ]
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+              pkgs.mold-wrapped
+              pkgs.lld
+            ]
             ++ lib.optionals pkgs.stdenv.isDarwin [
-              pkgs.apple-sdk-test
+              # Additional darwin specific inputs can be set here
+              #              pkgs.libiconv
             ];
 
-          nativeBuildInputs = [
-            pkgs.git
-          ]
-          ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
-            pkgs.mold-wrapped
-            pkgs.lld
-          ]
-          ++ lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.apple-sdk-test
-          ];
+          # Additional environment variables can be set directly
+          # MY_CUSTOM_VAR = "some value";
         };
 
-        staticEnv = {
+        # Build *just* the cargo dependencies (of the entire workspace),
+        # so we can reuse all of that work (e.g. via cachix) when running in CI
+        # It is *highly* recommended to use something like cargo-hakari to avoid
+        # cache misses when building individual top-level-crates
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+        version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
+
+        individualCrateArgs = commonArgs // {
+          inherit cargoArtifacts;
+          #          inherit (craneLib.crateNameFromCargoToml { inherit src; }) version;
+          # NB: we disable tests since we'll run them all via cargo-nextest
+          doCheck = false;
+        };
+
+        fileSetForCrate =
+          crate:
+          lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              (craneLib.fileset.commonCargoSources crate)
+              (lib.fileset.fileFilter (file: file.hasExt "rs") ./crates/yeet/src)
+              (lib.fileset.fileFilter (file: file.hasExt "proto") ./crates/yeet/src/proto)
+              (lib.fileset.maybeMissing ./crates/${crate}/Cargo.toml)
+              (lib.fileset.maybeMissing ./crates/${crate}/build.rs)
+            ];
+          };
+
+        nixEnvArgs = {
           STUPIDNIXFLAKEHACK = version;
           PROTOC = "${pkgs.protobuf}/bin/protoc";
           PROTOC_INCLUDE = "${pkgs.protobuf}/include";
@@ -128,75 +121,144 @@
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
           RUSTFLAGS = "-Aclippy::uninlined_format_args ";
-          # RUSTFLAGS =
-          #   lib.optionalString pkgs.stdenv.isLinux "-C link-arg=-fuse-ld=mold "
-          #   + "-Aclippy::uninlined_format_args ";
-          # }
-          # // lib.attrsets.optionalAttrs pkgs.stdenv.isLinux {
-          #   CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
-          #   CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
 
+        devArgs = {
+          CARGO_PROFILE = "dev";
+        };
+
+        releaseArgs = {
+          CARGO_PROFILE = "release";
+          RUSTFLAGS = "-D warnings";
+        };
+
+        # Build the top-level crates of the workspace as individual derivations.
+        # This allows consumers to only depend on (and build) only what they need.
+        # Though it is possible to build the entire workspace as a single derivation,
+        # so this is left up to you on how to organize things
+        #
+        # Note that the cargo workspace must define `workspace.members` using wildcards,
+        # otherwise, omitting a crate (like we do below) will result in errors since
+        # cargo won't be able to find the sources for all members.
         yeet = craneLib.buildPackage (
-          commonArgs
+          individualCrateArgs
+          // nixEnvArgs
+          // releaseArgs
           // {
-            inherit version;
-          }
-          // staticEnv
-          // {
-            CARGO_PROFILE = "dev";
+            pname = "yeet";
+            cargoExtraArgs = "-p yeet";
+            src = fileSetForCrate ./crates/yeet;
           }
         );
-
-        yeet-release = craneLib.buildPackage (
-          commonArgs
+        yeet-dev = craneLib.buildPackage (
+          individualCrateArgs
+          // nixEnvArgs
+          // devArgs
           // {
-            inherit version;
-          }
-          // staticEnv
-          // {
-            CARGO_PROFILE = "release";
-            RUSTFLAGS = "-D warnings";
+            pname = "yeet";
+            cargoExtraArgs = "-p yeet";
+            src = fileSetForCrate ./crates/yeet;
           }
         );
       in
       {
-        formatter = treefmtEval.config.build.wrapper;
-
         checks = {
-          inherit yeet;
           formatter = treefmtEval.config.build.check self;
+          # Build the crates as part of `nix flake check` for convenience
+          inherit yeet;
+
+          # Run clippy (and deny all warnings) on the workspace source,
+          # again, reusing the dependency artifacts from above.
+          #
+          # Note that this is done as a separate derivation so that
+          # we can block the CI if there are issues here, but not
+          # prevent downstream consumers from building our crate by itself.
+          yeet-clippy = craneLib.cargoClippy (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+            }
+          );
+
+          yeet-doc = craneLib.cargoDoc (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              # This can be commented out or tweaked as necessary, e.g. set to
+              # `--deny rustdoc::broken-intra-doc-links` to only enforce that lint
+              env.RUSTDOCFLAGS = "--deny warnings";
+            }
+          );
+
+          # Check formatting
+          yeet-fmt = craneLib.cargoFmt {
+            inherit src;
+          };
+
+          yeet-toml-fmt = craneLib.taploFmt {
+            src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
+            # taplo arguments can be further customized below as needed
+            # taploExtraArgs = "--config ./taplo.toml";
+          };
+
+          # Audit dependencies
+          yeet-audit = craneLib.cargoAudit {
+            inherit src;
+            inherit (inputs) advisory-db;
+          };
+
+          # Run tests with cargo-nextest
+          # Consider setting `doCheck = false` on other crate derivations
+          # if you do not want the tests to run twice
+          yeet-nextest = craneLib.cargoNextest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              partitions = 1;
+              partitionType = "count";
+              cargoNextestPartitionsExtraArgs = "--no-tests=pass";
+            }
+          );
         };
 
         packages = {
-          default = yeet;
-          release = yeet-release;
+          inherit yeet yeet-dev;
+          default = yeet-dev;
         };
 
-        # Makes updating everything at once a bit easier.
-        # nix run .#update
-        apps.update = {
-          type = "app";
-          program = "${
-            pkgs.writeShellApplication {
-              name = "update";
-              # runtimeInputs = [
-              #   pkgs.nix
-              #   pkgs.jq
-              # ];
-              text = ''
-                set -e
-                nix flake update
-                cargo update --verbose
-                cargo upgrade --verbose
-              '';
-            }
-          }/bin/update";
+        apps = {
+          yeet = inputs.flake-utils.lib.mkApp {
+            drv = yeet;
+          };
+          yeet-dev = inputs.flake-utils.lib.mkApp {
+            drv = yeet-dev;
+          };
+          # Makes updating everything at once a bit easier.
+          # nix run .#update
+          update = {
+            type = "app";
+            program = "${
+              pkgs.writeShellApplication {
+                name = "update";
+                # runtimeInputs = [
+                #   pkgs.nix
+                #   pkgs.jq
+                # ];
+                text = ''
+                  set -e
+                  nix flake update
+                  cargo update --verbose
+                  cargo upgrade --verbose
+                '';
+              }
+            }/bin/update";
+          };
         };
 
         devShells.default = craneLib.devShell {
-          buildInputs = commonArgs.buildInputs;
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
+          checks = self.checks.${system};
+
           packages = (
             with pkgs;
             [
