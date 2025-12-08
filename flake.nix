@@ -220,6 +220,9 @@
               cargoNextestPartitionsExtraArgs = "--no-tests=pass";
             }
           );
+        }
+        // lib.optionalAttrs pkgs.stdenv.isLinux {
+          yeet-int-basic = pkgs.callPackage ./nix/basic.nix { inherit yeet; };
         };
 
         packages = {
