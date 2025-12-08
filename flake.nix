@@ -40,7 +40,7 @@
         src = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions [
-            (lib.fileset.fileFilter (file: file.hasExt "rs") ./.)
+            (lib.fileset.fileFilter (file: file.hasExt "rs") ./crates)
             (lib.fileset.fileFilter (file: file.hasExt "toml") ./.)
             (lib.fileset.fileFilter (file: file.hasExt "proto") ./crates/yeet/src/proto)
             ./Cargo.lock

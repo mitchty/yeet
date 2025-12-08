@@ -8,12 +8,13 @@ pkgs.testers.runNixOSTest {
       environment.systemPackages = [ yeet ];
     };
 
-  # Lets start with just making sure yeet -V works. Things will get complext
+  # Lets start with just making sure yeet -V works. Things will get complect
   # from here on out.
   testScript = ''
     start_all()
     machine.wait_for_unit("multi-user.target")
 
     machine.succeed("yeet -V")
+    machine.succeed("yeet --version")
   '';
 }
