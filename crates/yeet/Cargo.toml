@@ -70,6 +70,7 @@ rand = "~0.9.2"
 tower = "~0.5"
 hyper-util = "~0.1"
 parking_lot = "~0.12"
+atty = "~0.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "~0.2"

@@ -1,0 +1,24 @@
+# Nix vm test framework integration tests
+
+Since this heap of junk needs to run and be tested across multiple machines, and I am using nixos already I'm using the nixos testing frameworks to test out inter node work.
+
+For now the tests will remain simple but the idea will be to test as much in nixos test framework vm's as possible to catch any bugs.
+
+These should be considered integration tests for yeet. While this won't address how I test betwee linux<->macos or others its at least a start and a way to know if it works at least between two qemu nixos vm instances. If I can replicate issues in here I can save on the hassle of inter os testing somewhat.
+
+But the inter os testing is a "future mitch problem". As is tradition future me is the sucker to pick that work back up.
+
+What should be tested at a high level for now that can't really be easily tested at a unit test level:
+- I can install/setup yeet as a systemd service (TODO: I should create a nixos module for yeet with systemd etc.. likely darwin as well for launchd)
+  - Need to setup test ssh keys for inter node communication I can be sure work so that I can have yeet ensure ssh forwarding is working
+- I can then create a bunch of files or gihugic files then initially do yeet cp sut nodeN:/some/destination
+- I can call (as of now unimplemented) yeet status sync --wait? (syntax pulled out of my ass here mostly a stand in for "don't return until yeet thinks things are synchronized)
+- If that is correct I can then probably abuse rsync --checksum to be sure nothing changes somehow? Idea is abuse rsync to ensure that the lhs and rhs are the same.
+
+I can expand this as time goes on with more complex layouts and tests as well for when I get/brain on how I want swarm syncing to work so that I can sync between multiple nodes but for now I just want this whole shindig to have basic proofs that things work.
+
+But I think having this whole spiel and nix functions etc... to help things out I can catch crap that unit tests won't really help with as runtime witnesses.
+
+This should also help when I get bpf support working so I can also ensure that I can only transfer what changed and somehow track that.... Also a future sucker me task its not gonna be fun to figure out how to prove that...
+
+I think it'll also help for if/when I need to also prove things like invalid ssh key setup behavior as well as ssh jump host forwarding too. Negative tests to be sure failures behave as expected will fit in here too. I should probably start with that actually.

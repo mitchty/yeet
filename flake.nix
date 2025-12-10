@@ -221,9 +221,48 @@
             }
           );
         }
-        // lib.optionalAttrs pkgs.stdenv.isLinux {
-          yeet-int-basic = pkgs.callPackage ./nix/basic.nix { inherit yeet; };
-        };
+        // lib.optionalAttrs pkgs.stdenv.isLinux (
+          let
+            integrationTestFiles = builtins.sort (a: b: a < b) (
+              builtins.attrNames (
+                lib.filterAttrs (
+                  name: type: type == "regular" && lib.hasPrefix "integration-" name && lib.hasSuffix ".nix" name
+                ) (builtins.readDir ./nix)
+              )
+            );
+
+            integrationChecks = lib.listToAttrs (
+              map (
+                file:
+                let
+                  withoutPrefix = lib.removePrefix "integration-" file;
+                  withoutSuffix = lib.removeSuffix ".nix" withoutPrefix;
+                  matched = builtins.match "([0-9][0-9]-)(.+)" withoutSuffix;
+                  namePart = if matched != null then builtins.elemAt matched 1 else withoutSuffix;
+                in
+                {
+                  name = "yeet-int-${namePart}";
+                  value = pkgs.callPackage (./nix + "/${file}") { inherit yeet; };
+                }
+              ) integrationTestFiles
+            );
+
+            # Should I name this like regression suite or something? Future me task.
+            allIntegrationTests =
+              pkgs.runCommand "yeet-integration-all"
+                {
+                  buildInputs = lib.attrValues integrationChecks;
+                }
+                ''
+                  echo "All integration tests passed, build is probably worth using!"
+                  touch $out
+                '';
+          in
+          integrationChecks
+          // {
+            yeet-integration-all = allIntegrationTests;
+          }
+        );
 
         packages = {
           inherit yeet yeet-dev;

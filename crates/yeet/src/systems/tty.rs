@@ -24,7 +24,10 @@ pub struct StdinPlugin;
 /// Restore terminal state on shutdown
 impl Drop for StdinPlugin {
     fn drop(&mut self) {
-        crossterm::terminal::disable_raw_mode().expect("Failed to disable raw mode");
+        // We only disable raw mode if we're in a tty terminal not daemon context
+        if atty::is(atty::Stream::Stdin) {
+            let _ = crossterm::terminal::disable_raw_mode();
+        }
     }
 }
 
@@ -36,20 +39,30 @@ struct StreamReceiver(Receiver<StdinEvent>);
 
 impl Plugin for StdinPlugin {
     fn build(&self, app: &mut App) {
+        let is_tty = atty::is(atty::Stream::Stdin);
+
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(ButtonInput::<KeyModifiers>::default());
-        app.add_systems(Startup, setup);
-        app.add_systems(PreUpdate, read_stream);
-        app.add_systems(Update, ctrl_c);
+
+        // If we're running as a daemon in say systemd/launchd stdin won't be a tty, no need for this
+        if is_tty {
+            app.add_systems(Startup, setup);
+            app.add_systems(PreUpdate, read_stream);
+            app.add_systems(Update, ctrl_c);
+        }
     }
 }
 
-// This system sets up the channel and writes to it from a stdin polling thread
 fn setup(mut commands: Commands) {
     let (tx, rx) = bounded::<StdinEvent>(1);
     commands.insert_resource(StreamReceiver(rx));
 
     // Raw mode is necessary to read key events without waiting for Enter
+    if !atty::is(atty::Stream::Stdin) {
+        warn!("setup called without TTY - skipping raw mode, possible bug?");
+        return;
+    }
+
     crossterm::terminal::enable_raw_mode().expect("Failed to enable raw mode");
 
     thread::spawn(move || {
