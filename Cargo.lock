@@ -8974,6 +8974,7 @@ dependencies = [
  "humantime",
  "hyper-util",
  "indicatif",
+ "libc",
  "lightyear",
  "log",
  "parking_lot",

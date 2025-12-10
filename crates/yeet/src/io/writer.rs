@@ -9,6 +9,18 @@ use super::progress::Progress;
 use super::work::WorkItem;
 use super::work_simple::SimpleWorkQueue;
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
+/// Filesystem feature detection for handling quirks of different filesystem types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FsFeatures {
+    /// Normal POSIX-compliant filesystem
+    Normal,
+    /// CIFS/Samba mount - chmod/chown may fail with EPERM even after successful copy
+    Samba,
+}
+
 // TODO: Need to probably use
 // https://docs.rs/nix/latest/nix/sys/statvfs/index.html to control if we are
 // writing to a network fs or not. and if socontrol those workers to 1/2. This
@@ -24,6 +36,72 @@ fn get_num_workers() -> usize {
         .unwrap_or(DEFAULT_WORKERS)
 }
 
+/// Sigh, filesystems suck, network especially. Detect that our destination is a
+/// CIFS/Samba mount that lacks support for fchmod/chmod support. If so, we
+/// can't really trust errors from libc copy function calls.
+#[cfg(unix)]
+fn detect_fs_features(dest_dir: &std::path::Path) -> FsFeatures {
+    use std::fs::File;
+    use std::io::Write;
+    use std::os::raw::c_long;
+
+    // TODO: Top is what I found in node for this same general approach
+    // https://github.com/nodejs/node/issues/31170
+    // bottom is what I see on my desktop. Need to double check which is
+    // "right"-er. For now whatever.
+    const CIFS_MAGIC_1: c_long = 0xFF534D42u32 as c_long;
+    const CIFS_MAGIC_2: c_long = 0xFE534D42u32 as c_long;
+
+    let test_file_path = dest_dir.join(".yeet_fs_feature_detection");
+
+    let detected = (|| -> Result<FsFeatures, std::io::Error> {
+        let mut test_file = File::create(&test_file_path)?;
+        test_file.write_all(b"test")?;
+        test_file.sync_all()?;
+
+        let fd = test_file.as_raw_fd();
+        let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+
+        if unsafe { libc::fstatfs(fd, &mut stat) } == 0 {
+            if stat.f_type == CIFS_MAGIC_1 || stat.f_type == CIFS_MAGIC_2 {
+                tracing::info!(
+                    "detected a CIFS/Samba filesystem {} (f_type: 0x{:X})",
+                    dest_dir.display(),
+                    stat.f_type
+                );
+                Ok(FsFeatures::Samba)
+            } else {
+                tracing::debug!(
+                    "detected a normal filesystem {} (f_type: 0x{:X})",
+                    dest_dir.display(),
+                    stat.f_type
+                );
+                Ok(FsFeatures::Normal)
+            }
+        } else {
+            tracing::warn!("fstatfs failed, assuming a normal filesystem");
+            Ok(FsFeatures::Normal)
+        }
+    })();
+
+    let _ = std::fs::remove_file(&test_file_path);
+
+    // Not sure if this is the best logic but I'll fix it in post, gotta get this doing real crap first.
+    detected.unwrap_or_else(|e| {
+        tracing::warn!(
+            "filesystem detection failed: {}, assuming normal filesystem",
+            e
+        );
+        FsFeatures::Normal
+    })
+}
+
+// TODO: on non unix what goes here? Only the shadow knows.
+#[cfg(not(unix))]
+fn detect_fs_features(_dest_dir: &std::path::Path) -> FsFeatures {
+    FsFeatures::Normal
+}
+
 /// Writer pool that processes work items from the queue I played around with
 /// multiple writers, its... not as useful as I had hoped need to rethink my
 /// solution here.
@@ -36,6 +114,7 @@ pub struct WriterPool {
     active_workers: Arc<Mutex<usize>>,
     _reader_done: Arc<Mutex<bool>>, // TODO: keep?
     done: Arc<Mutex<bool>>,
+    fs_features: FsFeatures,
 }
 
 impl WriterPool {
@@ -47,6 +126,10 @@ impl WriterPool {
         reader_done: Arc<Mutex<bool>>,
         done: Arc<Mutex<bool>>,
     ) -> Self {
+        // Try to figure out if our dest is a problematic fs or not that might not
+        // support chmod
+        let fs_features = detect_fs_features(&dest);
+
         Self {
             dest,
             work_queue,
@@ -56,6 +139,7 @@ impl WriterPool {
             active_workers: Arc::new(Mutex::new(0)),
             _reader_done: reader_done,
             done,
+            fs_features,
         }
     }
 
@@ -244,6 +328,29 @@ impl WriterPool {
         Ok(())
     }
 
+    /// Update progress counters for a file copy operation
+    fn update_file_progress(&self, uuid: u128, bytes_copied: u64, file_size: u64) {
+        const FAST_COPY_THRESHOLD: u64 = super::LARGE_FILE_THRESHOLD;
+
+        let atomic_progress = self.progress.get_or_create(uuid);
+        atomic_progress
+            .files_written
+            .fetch_add(1, Ordering::Relaxed);
+
+        // This is for non chunked file copying only (more a perf optimization
+        // to use sendfile via libc really)
+        if file_size < FAST_COPY_THRESHOLD {
+            atomic_progress.record_write(bytes_copied);
+        }
+
+        tracing::trace!(
+            "{} file complete status: {}/{} files",
+            uuid::Uuid::from_u128(uuid),
+            atomic_progress.files_written.load(Ordering::Relaxed),
+            atomic_progress.files_found.load(Ordering::Relaxed)
+        );
+    }
+
     async fn create_directory(
         &self,
         uuid: u128,
@@ -302,11 +409,27 @@ impl WriterPool {
         // Limit to small files for now is same as "large file threshold" for no reason than cause.
         const FAST_COPY_THRESHOLD: u64 = super::LARGE_FILE_THRESHOLD;
 
-        let copy_result: Result<u64, std::io::Error> = if metadata.size < FAST_COPY_THRESHOLD {
-            // Fast path for small file local copying - use blocking std::fs::copy directly
+        // Ok this is jank af but, we need to detect if we're copying to a CIFS
+        // mount, if so we can't use std::fs::copy() as it implicitly tries to
+        // chmod permissions after it copies data. But unless CIFS is mounted
+        // with specific flags, that will yield an EPERM 13 errno. So we detect
+        // this at copy time and avoid calling std::fs::copy() in a way where it
+        // will always fail.
+        //
+        // Note chmod data on CIFS is useless anyway. I should brain a bit on
+        // the "right" approach to syncing metadata to/from filesystems such as
+        // these.
+        let copy_result: Result<u64, std::io::Error> = if self.fs_features == FsFeatures::Samba {
+            // TODO: Should I just implement my own std::fs::copy replacement
+            // using io::copy like it does and just skip the perms?
+            //
+            // I'll sleep on it first.
+            self.copy_file_chunked(uuid, &source_path, &dest_path, metadata.size)
+                .await
+        } else if metadata.size < FAST_COPY_THRESHOLD {
             std::fs::copy(&source_path, &dest_path)
         } else {
-            // Slow path for chungus files - use chunked copy with progress
+            // Slow path for large files - use chunked copy with progress
             self.copy_file_chunked(uuid, &source_path, &dest_path, metadata.size)
                 .await
         };
@@ -327,23 +450,7 @@ impl WriterPool {
                     errors.push(IoError::destination(error_msg, dest_path.clone()));
                 }
 
-                let atomic_progress = self.progress.get_or_create(uuid);
-                atomic_progress
-                    .files_written
-                    .fetch_add(1, Ordering::Relaxed);
-
-                // Only record bytes for small files (large files get tracked in copy_file_chunked not here future mitch)
-                if metadata.size < FAST_COPY_THRESHOLD {
-                    atomic_progress.record_write(bytes_copied);
-                }
-
-                tracing::trace!(
-                    "{} file complete status: {}/{} files",
-                    uuid::Uuid::from_u128(uuid),
-                    atomic_progress.files_written.load(Ordering::Relaxed),
-                    atomic_progress.files_found.load(Ordering::Relaxed)
-                );
-
+                self.update_file_progress(uuid, bytes_copied, metadata.size);
                 Ok(())
             }
             Err(e) => {

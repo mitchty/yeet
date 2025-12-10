@@ -71,6 +71,9 @@ tower = "~0.5"
 hyper-util = "~0.1"
 parking_lot = "~0.12"
 
+[target.'cfg(unix)'.dependencies]
+libc = "~0.2"
+
 [build-dependencies]
 tonic-prost-build = "*"
 tonic-build = "~0.14.2"
