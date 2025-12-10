@@ -9,7 +9,7 @@ use super::progress::Progress;
 use super::work::WorkItem;
 use super::work_simple::SimpleWorkQueue;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 
 /// Filesystem feature detection for handling quirks of different filesystem types
@@ -39,7 +39,7 @@ fn get_num_workers() -> usize {
 /// Sigh, filesystems suck, network especially. Detect that our destination is a
 /// CIFS/Samba mount that lacks support for fchmod/chmod support. If so, we
 /// can't really trust errors from libc copy function calls.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn detect_fs_features(dest_dir: &std::path::Path) -> FsFeatures {
     use std::fs::File;
     use std::io::Write;
@@ -96,8 +96,8 @@ fn detect_fs_features(dest_dir: &std::path::Path) -> FsFeatures {
     })
 }
 
-// TODO: on non unix what goes here? Only the shadow knows.
-#[cfg(not(unix))]
+// TODO: on non unix/linux what goes here? Only the shadow knows.
+#[cfg(not(target_os = "linux"))]
 fn detect_fs_features(_dest_dir: &std::path::Path) -> FsFeatures {
     FsFeatures::Normal
 }
