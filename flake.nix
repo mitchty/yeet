@@ -33,9 +33,26 @@
           ];
         };
 
+        pkgsMusl = import inputs.nixpkgs {
+          inherit system;
+          overlays = [ inputs.fenix.overlays.default ];
+          crossSystem = {
+            config = "x86_64-unknown-linux-musl";
+          };
+        };
+
         inherit (pkgs) lib;
 
         craneLib = inputs.crane.mkLib pkgs;
+
+        craneLibMusl = (inputs.crane.mkLib pkgsMusl).overrideToolchain (
+          p:
+          p.fenix.combine [
+            p.fenix.stable.rustc
+            p.fenix.stable.cargo
+            p.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std
+          ]
+        );
 
         src = lib.fileset.toSource {
           root = ./.;
@@ -83,11 +100,36 @@
           # MY_CUSTOM_VAR = "some value";
         };
 
+        commonArgsMusl = {
+          inherit src;
+          strictDeps = true;
+
+          nativeBuildInputs = [ pkgsMusl.git ];
+
+          buildInputs = with pkgsMusl; [
+            protobuf
+            openssl.dev
+          ];
+
+          # Ensure fully static linking
+          CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=-static";
+        };
+
         # Build *just* the cargo dependencies (of the entire workspace),
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+        # Cargo artifacts for musl builds
+        cargoArtifactsMusl = craneLibMusl.buildDepsOnly (
+          commonArgsMusl
+          // {
+            PROTOC = "${pkgsMusl.protobuf}/bin/protoc";
+            PROTOC_INCLUDE = "${pkgsMusl.protobuf}/include";
+          }
+        );
 
         version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
 
@@ -158,6 +200,37 @@
             pname = "yeet";
             cargoExtraArgs = "-p yeet";
             src = fileSetForCrate ./crates/yeet;
+          }
+        );
+
+        # Linux static build
+        yeet-static = craneLibMusl.buildPackage (
+          commonArgsMusl
+          // {
+            pname = "yeet-static";
+            version = version;
+            cargoArtifacts = cargoArtifactsMusl;
+            cargoExtraArgs = "-p yeet";
+            src = fileSetForCrate ./crates/yeet;
+
+            STUPIDNIXFLAKEHACK = version;
+            PROTOC = "${pkgsMusl.protobuf}/bin/protoc";
+            PROTOC_INCLUDE = "${pkgsMusl.protobuf}/include";
+
+            OPENSSL_STATIC = "1";
+            OPENSSL_LIB_DIR = "${pkgsMusl.pkgsStatic.openssl.out}/lib";
+            OPENSSL_INCLUDE_DIR = "${pkgsMusl.pkgsStatic.openssl.dev}/include";
+
+            # normal builds can run checks
+            doCheck = false;
+
+            meta = {
+              description = "yeet static";
+              platforms = [
+                "x86_64-linux"
+                "aarch64-linux"
+              ];
+            };
           }
         );
       in
@@ -267,6 +340,9 @@
         packages = {
           inherit yeet yeet-dev;
           default = yeet-dev;
+        }
+        // lib.optionalAttrs pkgs.stdenv.isLinux {
+          inherit yeet-static;
         };
 
         apps = {
@@ -295,6 +371,11 @@
                 '';
               }
             }/bin/update";
+          };
+        }
+        // lib.optionalAttrs pkgs.stdenv.isLinux {
+          yeet-static = inputs.flake-utils.lib.mkApp {
+            drv = yeet-static;
           };
         };
 

@@ -43,14 +43,14 @@ fn get_num_workers() -> usize {
 fn detect_fs_features(dest_dir: &std::path::Path) -> FsFeatures {
     use std::fs::File;
     use std::io::Write;
-    use std::os::raw::c_long;
 
     // TODO: Top is what I found in node for this same general approach
     // https://github.com/nodejs/node/issues/31170
     // bottom is what I see on my desktop. Need to double check which is
     // "right"-er. For now whatever.
-    const CIFS_MAGIC_1: c_long = 0xFF534D42u32 as c_long;
-    const CIFS_MAGIC_2: c_long = 0xFE534D42u32 as c_long;
+    // Note: f_type is u64 in musl and i64 in glibc
+    const CIFS_MAGIC_1: u32 = 0xFF534D42;
+    const CIFS_MAGIC_2: u32 = 0xFE534D42;
 
     let test_file_path = dest_dir.join(".yeet_fs_feature_detection");
 
@@ -63,18 +63,20 @@ fn detect_fs_features(dest_dir: &std::path::Path) -> FsFeatures {
         let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
 
         if unsafe { libc::fstatfs(fd, &mut stat) } == 0 {
-            if stat.f_type == CIFS_MAGIC_1 || stat.f_type == CIFS_MAGIC_2 {
+            // cast f_type to u64 to work with musl
+            let f_type = stat.f_type as u64;
+            if f_type == CIFS_MAGIC_1 as u64 || f_type == CIFS_MAGIC_2 as u64 {
                 tracing::info!(
                     "detected a CIFS/Samba filesystem {} (f_type: 0x{:X})",
                     dest_dir.display(),
-                    stat.f_type
+                    f_type
                 );
                 Ok(FsFeatures::Samba)
             } else {
                 tracing::debug!(
                     "detected a normal filesystem {} (f_type: 0x{:X})",
                     dest_dir.display(),
-                    stat.f_type
+                    f_type
                 );
                 Ok(FsFeatures::Normal)
             }
