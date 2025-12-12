@@ -28,7 +28,7 @@
           overlays = [
             inputs.fenix.overlays.default
             (self: super: {
-              apple-sdk-test = super.apple-sdk_15;
+              apple-sdk-test = super.apple-sdk;
             })
           ];
         };
@@ -37,22 +37,51 @@
           inherit system;
           overlays = [ inputs.fenix.overlays.default ];
           crossSystem = {
-            config = "x86_64-unknown-linux-musl";
+            config = "${pkgs.stdenv.hostPlatform.parsed.cpu.name}-unknown-linux-musl";
           };
         };
+
+        pkgsDarwin =
+          if pkgs.stdenv.isDarwin then
+            import inputs.nixpkgs {
+              inherit system;
+              overlays = [ inputs.fenix.overlays.default ];
+              # Use the host platform to get system-only linking
+              crossSystem = pkgs.stdenv.hostPlatform;
+            }
+          else
+            null;
 
         inherit (pkgs) lib;
 
         craneLib = inputs.crane.mkLib pkgs;
 
-        craneLibMusl = (inputs.crane.mkLib pkgsMusl).overrideToolchain (
-          p:
-          p.fenix.combine [
-            p.fenix.stable.rustc
-            p.fenix.stable.cargo
-            p.fenix.targets.x86_64-unknown-linux-musl.stable.rust-std
-          ]
-        );
+        craneLibMusl =
+          let
+            muslTarget = "${pkgs.stdenv.hostPlatform.parsed.cpu.name}-unknown-linux-musl";
+          in
+          (inputs.crane.mkLib pkgsMusl).overrideToolchain (
+            p:
+            p.fenix.combine [
+              p.fenix.stable.rustc
+              p.fenix.stable.cargo
+              p.fenix.targets.${muslTarget}.stable.rust-std
+            ]
+          );
+
+        # Crane lib for Darwin builds that only link system libraries
+        craneLibDarwin =
+          if pkgs.stdenv.isDarwin then
+            (inputs.crane.mkLib pkgsDarwin).overrideToolchain (
+              p:
+              p.fenix.combine [
+                p.fenix.stable.rustc
+                p.fenix.stable.cargo
+                p.fenix.stable.rust-std
+              ]
+            )
+          else
+            null;
 
         src = lib.fileset.toSource {
           root = ./.;
@@ -111,10 +140,27 @@
             openssl.dev
           ];
 
-          # Ensure fully static linking
-          CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";
+          # For now we'll only build for the host arch. I can deal with cross compilation later for x86_64->aarch64
+          CARGO_BUILD_TARGET = "${pkgs.stdenv.hostPlatform.parsed.cpu.name}-unknown-linux-musl";
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=-static";
         };
+
+        # Common arguments for Darwin builds (system libraries only)
+        commonArgsDarwin =
+          if pkgs.stdenv.isDarwin then
+            {
+              inherit src;
+              strictDeps = true;
+
+              nativeBuildInputs = [ pkgsDarwin.git ];
+
+              buildInputs = with pkgsDarwin; [
+                protobuf
+                apple-sdk
+              ];
+            }
+          else
+            { };
 
         # Build *just* the cargo dependencies (of the entire workspace),
         # so we can reuse all of that work (e.g. via cachix) when running in CI
@@ -130,6 +176,19 @@
             PROTOC_INCLUDE = "${pkgsMusl.protobuf}/include";
           }
         );
+
+        # Cargo artifacts for Darwin builds
+        cargoArtifactsDarwin =
+          if pkgs.stdenv.isDarwin then
+            craneLibDarwin.buildDepsOnly (
+              commonArgsDarwin
+              // {
+                PROTOC = "${pkgsDarwin.protobuf}/bin/protoc";
+                PROTOC_INCLUDE = "${pkgsDarwin.protobuf}/include";
+              }
+            )
+          else
+            null;
 
         version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
 
@@ -203,11 +262,10 @@
           }
         );
 
-        # Linux static build
-        yeet-static = craneLibMusl.buildPackage (
+        yeet-release-linux = craneLibMusl.buildPackage (
           commonArgsMusl
           // {
-            pname = "yeet-static";
+            pname = "yeet-release";
             version = version;
             cargoArtifacts = cargoArtifactsMusl;
             cargoExtraArgs = "-p yeet";
@@ -225,7 +283,7 @@
             doCheck = false;
 
             meta = {
-              description = "yeet static";
+              description = "yeet release build";
               platforms = [
                 "x86_64-linux"
                 "aarch64-linux"
@@ -233,6 +291,50 @@
             };
           }
         );
+
+        # Darwin release build (system libraries only, portable)
+        yeet-release-darwin =
+          if pkgs.stdenv.isDarwin then
+            craneLibDarwin.buildPackage (
+              commonArgsDarwin
+              // {
+                pname = "yeet-release";
+                version = version;
+                cargoArtifacts = cargoArtifactsDarwin;
+                cargoExtraArgs = "-p yeet";
+                src = fileSetForCrate ./crates/yeet;
+
+                STUPIDNIXFLAKEHACK = version;
+                PROTOC = "${pkgsDarwin.protobuf}/bin/protoc";
+                PROTOC_INCLUDE = "${pkgsDarwin.protobuf}/include";
+
+                # Don't check during cross-compilation
+                doCheck = false;
+
+                # abuse install_name_tool to rewrite the dynamic link to
+                # /nix/store to /usr/lib for iconv. Can't find an easy way to
+                # convince the rust toolchain to not do this in nix so whatever
+                # its FINE I think...
+                postInstall = ''
+                  for binary in $out/bin/*; do
+                    libiconv_path=$(otool -L "$binary" | grep libiconv | awk '{print $1}' | grep /nix/store || true)
+                    if [ -n "$libiconv_path" ]; then
+                      install_name_tool -change "$libiconv_path" /usr/lib/libiconv.2.dylib "$binary"
+                    fi
+                  done
+                '';
+
+                meta = {
+                  description = "yeet release build";
+                  platforms = [
+                    "x86_64-darwin"
+                    "aarch64-darwin"
+                  ];
+                };
+              }
+            )
+          else
+            null;
       in
       {
         checks = {
@@ -342,7 +444,10 @@
           default = yeet-dev;
         }
         // lib.optionalAttrs pkgs.stdenv.isLinux {
-          inherit yeet-static;
+          yeet-release = yeet-release-linux;
+        }
+        // lib.optionalAttrs pkgs.stdenv.isDarwin {
+          yeet-release = yeet-release-darwin;
         };
 
         apps = {
@@ -374,8 +479,13 @@
           };
         }
         // lib.optionalAttrs pkgs.stdenv.isLinux {
-          yeet-static = inputs.flake-utils.lib.mkApp {
-            drv = yeet-static;
+          yeet-release = inputs.flake-utils.lib.mkApp {
+            drv = yeet-release-linux;
+          };
+        }
+        // lib.optionalAttrs pkgs.stdenv.isDarwin {
+          yeet-release = inputs.flake-utils.lib.mkApp {
+            drv = yeet-release-darwin;
           };
         };
 
