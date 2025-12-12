@@ -52,6 +52,15 @@
           else
             null;
 
+        pkgsWindows = import inputs.nixpkgs {
+          inherit system;
+          overlays = [ inputs.fenix.overlays.default ];
+          crossSystem = {
+            config = "x86_64-w64-mingw32";
+            libc = "msvcrt";
+          };
+        };
+
         inherit (pkgs) lib;
 
         craneLib = inputs.crane.mkLib pkgs;
@@ -82,6 +91,15 @@
             )
           else
             null;
+
+        craneLibWindows = (inputs.crane.mkLib pkgsWindows).overrideToolchain (
+          p:
+          p.fenix.combine [
+            p.fenix.stable.rustc
+            p.fenix.stable.cargo
+            p.fenix.targets.x86_64-pc-windows-gnu.stable.rust-std
+          ]
+        );
 
         src = lib.fileset.toSource {
           root = ./.;
@@ -162,6 +180,32 @@
           else
             { };
 
+        # https://crane.dev/faq/cross-compiling-aws-lc-sys.html?highlight=aws-lc-sy#i-want-to-cross-compile-aws-lc-sys-to-windows-using-mingw
+        commonArgsWindows =
+          let
+            buildPlatformSuffix = lib.strings.toLower pkgs.pkgsBuildHost.stdenv.hostPlatform.rust.cargoEnvVarTarget;
+          in
+          {
+            inherit src;
+            strictDeps = true;
+
+            nativeBuildInputs = with pkgs; [
+              git
+              protobuf
+              buildPackages.nasm
+              buildPackages.cmake
+            ];
+
+            buildInputs = with pkgsWindows.windows; [ pthreads ];
+
+            CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
+            AWS_LC_SYS_PREBUILT_NASM = "0";
+            CFLAGS = "-Wno-stringop-overflow -Wno-array-bounds -Wno-restrict";
+            CFLAGS_x86_64-pc-windows-gnu = "-I${pkgsWindows.windows.pthreads}/include";
+            "CC_${buildPlatformSuffix}" = "cc";
+            "CXX_${buildPlatformSuffix}" = "c++";
+          };
+
         # Build *just* the cargo dependencies (of the entire workspace),
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
@@ -189,6 +233,14 @@
             )
           else
             null;
+
+        cargoArtifactsWindows = craneLibWindows.buildDepsOnly (
+          commonArgsWindows
+          // {
+            PROTOC = "${pkgs.protobuf}/bin/protoc";
+            PROTOC_INCLUDE = "${pkgs.protobuf}/include";
+          }
+        );
 
         version = self.rev or self.dirtyShortRev or "nix-flake-cant-get-git-commit-sha";
 
@@ -335,6 +387,28 @@
             )
           else
             null;
+
+        yeet-release-windows = craneLibWindows.buildPackage (
+          commonArgsWindows
+          // {
+            pname = "yeet-release";
+            version = version;
+            cargoArtifacts = cargoArtifactsWindows;
+            cargoExtraArgs = "-p yeet";
+            src = fileSetForCrate ./crates/yeet;
+
+            STUPIDNIXFLAKEHACK = version;
+            PROTOC = "${pkgs.protobuf}/bin/protoc";
+            PROTOC_INCLUDE = "${pkgs.protobuf}/include";
+
+            # Don't check during cross-compilation
+            doCheck = false;
+
+            meta = {
+              description = "yeet release build";
+            };
+          }
+        );
       in
       {
         checks = {
@@ -445,6 +519,7 @@
         }
         // lib.optionalAttrs pkgs.stdenv.isLinux {
           yeet-release = yeet-release-linux;
+          inherit yeet-release-windows;
         }
         // lib.optionalAttrs pkgs.stdenv.isDarwin {
           yeet-release = yeet-release-darwin;
@@ -481,6 +556,9 @@
         // lib.optionalAttrs pkgs.stdenv.isLinux {
           yeet-release = inputs.flake-utils.lib.mkApp {
             drv = yeet-release-linux;
+          };
+          yeet-release-windows = inputs.flake-utils.lib.mkApp {
+            drv = yeet-release-windows;
           };
         }
         // lib.optionalAttrs pkgs.stdenv.isDarwin {

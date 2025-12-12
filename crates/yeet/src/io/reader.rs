@@ -319,6 +319,7 @@ impl ReaderPool {
 
     fn get_file_metadata_blocking(&self, path: &std::path::Path) -> std::io::Result<FileMetadata> {
         use super::metadata::FileKind;
+        #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
 
         let metadata = std::fs::symlink_metadata(path)?;
@@ -334,27 +335,56 @@ impl ReaderPool {
             FileKind::Special
         };
 
-        Ok(FileMetadata {
-            path: path.to_path_buf(),
-            size: metadata.len(),
-            mode: metadata.mode(),
-            uid: metadata.uid(),
-            gid: metadata.gid(),
-            kind,
-            mtime: metadata.mtime() as u64,
-        })
+        #[cfg(unix)]
+        {
+            Ok(FileMetadata {
+                path: path.to_path_buf(),
+                size: metadata.len(),
+                mode: metadata.mode(),
+                uid: metadata.uid(),
+                gid: metadata.gid(),
+                kind,
+                mtime: metadata.mtime() as u64,
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(FileMetadata {
+                path: path.to_path_buf(),
+                size: metadata.len(),
+                kind,
+                mtime: metadata
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            })
+        }
     }
 
     fn get_dir_metadata_blocking(&self, path: &std::path::Path) -> std::io::Result<DirMetadata> {
+        #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
 
+        #[cfg(unix)]
         let metadata = std::fs::metadata(path)?;
-        Ok(DirMetadata {
-            path: path.to_path_buf(),
-            mode: metadata.mode(),
-            uid: metadata.uid(),
-            gid: metadata.gid(),
-        })
+        #[cfg(not(unix))]
+        let _metadata = std::fs::metadata(path)?;
+        #[cfg(unix)]
+        {
+            Ok(DirMetadata {
+                path: path.to_path_buf(),
+                mode: metadata.mode(),
+                uid: metadata.uid(),
+                gid: metadata.gid(),
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(DirMetadata {
+                path: path.to_path_buf(),
+            })
+        }
     }
 
     fn enqueue_file_blocking(
@@ -450,11 +480,14 @@ impl ReaderPool {
         metadata: &FileMetadata,
         local_skipped: &mut u64,
     ) {
+        #[cfg(unix)]
         tracing::warn!(
             "skipping special file: {} mode: {:o}",
             source_path.display(),
             metadata.mode
         );
+        #[cfg(not(unix))]
+        tracing::warn!("skipping special file: {}", source_path.display());
         *local_skipped += 1;
     }
 
