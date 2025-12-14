@@ -1,0 +1,166 @@
+name: Pre-Release Build
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux (static musl)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Configure Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Linux static binary
+        run: nix build .#yeet-release -L
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp result/bin/yeet dist/yeet-linux-x86_64
+          chmod +x dist/yeet-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeet-linux-x86_64
+          path: dist/yeet-linux-x86_64
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (MinGW cross-compile)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Configure Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Windows binary
+        run: nix build .#yeet-release-windows -L
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp result/bin/yeet.exe dist/yeet-windows-x86_64.exe
+          chmod +x dist/yeet-windows-x86_64.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeet-windows-x86_64
+          path: dist/yeet-windows-x86_64.exe
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS (system libs only)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Configure Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build macOS binary
+        run: nix build .#yeet-release -L
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp result/bin/yeet dist/yeet-darwin-aarch64
+          chmod +x dist/yeet-darwin-aarch64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yeet-darwin-aarch64
+          path: dist/yeet-darwin-aarch64
+          if-no-files-found: error
+
+  create-prerelease:
+    name: Create Pre-Release
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp artifacts/yeet-linux-x86_64/yeet-linux-x86_64 release/
+          cp artifacts/yeet-windows-x86_64/yeet-windows-x86_64.exe release/
+          cp artifacts/yeet-darwin-aarch64/yeet-darwin-aarch64 release/
+          ls -lh release/
+
+      - name: Delete existing pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Delete the pre-release tag and release if it exists
+          if gh release view pre-release >/dev/null 2>&1; then
+            echo "Deleting existing pre-releases"
+            gh release delete pre-release --yes --cleanup-tag
+          fi
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create pre-release \
+            --title "latest main" \
+            --notes "automated pre-release build off current main commit
+
+          commit: ${{ github.sha }}
+
+          ### Download Instructions
+
+          **Linux (x86_64):**
+          \`\`\`bash
+          curl -Lo yeet https://github.com/${{ github.repository }}/releases/download/pre-release/yeet-linux-x86_64
+          chmod +x yeet
+          ./yeet --version
+          \`\`\`
+
+          **macOS (Apple Silicon):**
+          \`\`\`bash
+          curl -Lo yeet https://github.com/${{ github.repository }}/releases/download/pre-release/yeet-darwin-aarch64
+          chmod +x yeet
+          ./yeet --version
+          \`\`\`
+
+          **Windows (x86_64):**
+          Download \`yeet-windows-x86_64.exe\` and run in PowerShell or Command Prompt? I guess? I don't do windows I don't know how this works I'm just building a binary to keep myself honest dude.
+
+          Note: windows is entirely untested, it will fail at being useful. Pull requests to make it useful welcome from someone that knows what they are doing. I sure as hell don't.
+
+          ---
+          **Note:** These are pre-release builds from the main development branch and may be broken. Don't depend on them to always be correct or backwards compatible." \
+            --prerelease \
+            release/yeet-linux-x86_64 \
+            release/yeet-windows-x86_64.exe \
+            release/yeet-darwin-aarch64
