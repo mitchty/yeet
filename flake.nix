@@ -573,6 +573,7 @@
           packages = (
             with pkgs;
             [
+              adrs
               cargo-bloat
               cargo-edit
               cargo-outdated
@@ -582,6 +583,7 @@
               grpcurl
               nil
               nixfmt-rfc-style
+              pandoc
               protobuf
               taplo
               treefmt
