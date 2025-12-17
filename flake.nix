@@ -22,6 +22,18 @@
     inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
+        stableRust = (
+          inputs.fenix.packages.${system}.stable.withComponents [
+            "cargo"
+            "clippy"
+            "llvm-tools"
+            "rustc"
+            "rust-src"
+            "rustfmt"
+            "rust-analyzer"
+          ]
+        );
+
         pkgs = import inputs.nixpkgs {
           inherit system;
 
@@ -114,10 +126,20 @@
         treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
-            nixpkgs-fmt.enable = true;
-            rustfmt.enable = true;
+            nixfmt.enable = true;
+            rustfmt = {
+              enable = true;
+              edition = "2024";
+            };
             taplo.enable = true;
-            protolint.enable = true;
+          };
+          settings.formatter.protolint = {
+            command = pkgs.protolint;
+            options = [
+              "lint"
+              "-fix"
+            ];
+            includes = [ "*.proto" ];
           };
         };
 
@@ -424,6 +446,7 @@
           # prevent downstream consumers from building our crate by itself.
           yeet-clippy = craneLib.cargoClippy (
             commonArgs
+            // nixEnvArgs
             // {
               inherit cargoArtifacts;
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -432,6 +455,7 @@
 
           yeet-doc = craneLib.cargoDoc (
             commonArgs
+            // nixEnvArgs
             // {
               inherit cargoArtifacts;
               # This can be commented out or tweaked as necessary, e.g. set to
@@ -440,28 +464,19 @@
             }
           );
 
-          # Check formatting
-          yeet-fmt = craneLib.cargoFmt {
-            inherit src;
-          };
-
-          yeet-toml-fmt = craneLib.taploFmt {
-            src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
-            # taplo arguments can be further customized below as needed
-            # taploExtraArgs = "--config ./taplo.toml";
-          };
-
           # Audit dependencies
-          yeet-audit = craneLib.cargoAudit {
-            inherit src;
-            inherit (inputs) advisory-db;
-          };
+          # 2025-12-16 commented out cause deps of deps are inactive and not sure how I want to handle that right now
+          # yeet-audit = craneLib.cargoAudit {
+          #   inherit src;
+          #   inherit (inputs) advisory-db;
+          # };
 
           # Run tests with cargo-nextest
           # Consider setting `doCheck = false` on other crate derivations
           # if you do not want the tests to run twice
           yeet-nextest = craneLib.cargoNextest (
             commonArgs
+            // nixEnvArgs
             // {
               inherit cargoArtifacts;
               partitions = 1;
@@ -491,7 +506,7 @@
                 in
                 {
                   name = "yeet-int-${namePart}";
-                  value = pkgs.callPackage (./nix + "/${file}") { inherit yeet; };
+                  value = pkgs.callPackage (./nix + "/${file}") { inherit yeet-dev; };
                 }
               ) integrationTestFiles
             );
@@ -595,6 +610,9 @@
               pkgs.apple-sdk-test
             ]
           );
+
+          # Make sure eglot+etc.. pick the right rust-src for eglot+lsp mode stuff using direnv
+          RUST_SRC_PATH = "${stableRust}/lib/rustlib/src/rust/library";
         };
       }
     );

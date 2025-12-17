@@ -1,4 +1,7 @@
-{ pkgs, yeet }:
+{
+  pkgs,
+  yeet-dev,
+}:
 let
   testPrivateKey = builtins.readFile ./yeet_ssh_sut_key;
   testPublicKey = builtins.readFile ./yeet_ssh_sut_key.pub;
@@ -15,11 +18,11 @@ pkgs.testers.runNixOSTest {
       {
         imports = [ yeetModule ];
 
-        environment.systemPackages = [ yeet ];
+        environment.systemPackages = [ yeet-dev ];
 
         services.yeet = {
           enable = true;
-          package = yeet;
+          package = yeet-dev;
         };
 
         services.openssh = {
@@ -47,11 +50,11 @@ pkgs.testers.runNixOSTest {
       {
         imports = [ yeetModule ];
 
-        environment.systemPackages = [ yeet ];
+        environment.systemPackages = [ yeet-dev ];
 
         services.yeet = {
           enable = true;
-          package = yeet;
+          package = yeet-dev;
         };
 
         services.openssh = {
