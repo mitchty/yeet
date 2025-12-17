@@ -22,6 +22,12 @@
     inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
+        # DRY some of the meta definitions for apps/packages for this chungus amungus
+        metaCommon = desc: {
+          description = if desc == "" then "yeet" else "yeet " + desc;
+          mainProgram = "yeet";
+        };
+
         stableRust = (
           inputs.fenix.packages.${system}.stable.withComponents [
             "cargo"
@@ -113,6 +119,19 @@
           ]
         );
 
+        # Constrained src fileset to ensure that cargo deps aren't rebuilt every change to crates.
+        srcDeps = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            ./Cargo.lock
+            ./Cargo.toml
+            (lib.fileset.fileFilter (file: file.hasExt "toml") ./crates)
+            # build.rs is needed if I make changes to it that will affect deps+build time deps
+            (lib.fileset.fileFilter (file: file.name == "build.rs") ./crates)
+          ];
+        };
+
+        # All the junk in the trunk not used for cache dep validation
         src = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions [
@@ -232,12 +251,13 @@
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { src = srcDeps; });
 
         # Cargo artifacts for musl builds
         cargoArtifactsMusl = craneLibMusl.buildDepsOnly (
           commonArgsMusl
           // {
+            src = srcDeps;
             PROTOC = "${pkgsMusl.protobuf}/bin/protoc";
             PROTOC_INCLUDE = "${pkgsMusl.protobuf}/include";
           }
@@ -249,6 +269,7 @@
             craneLibDarwin.buildDepsOnly (
               commonArgsDarwin
               // {
+                src = srcDeps;
                 PROTOC = "${pkgsDarwin.protobuf}/bin/protoc";
                 PROTOC_INCLUDE = "${pkgsDarwin.protobuf}/include";
               }
@@ -259,6 +280,7 @@
         cargoArtifactsWindows = craneLibWindows.buildDepsOnly (
           commonArgsWindows
           // {
+            src = srcDeps;
             PROTOC = "${pkgs.protobuf}/bin/protoc";
             PROTOC_INCLUDE = "${pkgs.protobuf}/include";
           }
@@ -356,8 +378,7 @@
             # normal builds can run checks
             doCheck = false;
 
-            meta = {
-              description = "yeet release build";
+            meta = metaCommon "release static linux build" // {
               platforms = [
                 "x86_64-linux"
                 "aarch64-linux"
@@ -398,8 +419,7 @@
                   done
                 '';
 
-                meta = {
-                  description = "yeet release build";
+                meta = metaCommon "release apple silicon build" // {
                   platforms = [
                     "x86_64-darwin"
                     "aarch64-darwin"
@@ -426,9 +446,7 @@
             # Don't check during cross-compilation
             doCheck = false;
 
-            meta = {
-              description = "yeet release build";
-            };
+            meta = metaCommon "release windows x86_64 build";
           }
         );
       in
@@ -541,12 +559,20 @@
         };
 
         apps = {
-          yeet = inputs.flake-utils.lib.mkApp {
-            drv = yeet;
-          };
-          yeet-dev = inputs.flake-utils.lib.mkApp {
-            drv = yeet-dev;
-          };
+          yeet =
+            (inputs.flake-utils.lib.mkApp {
+              drv = yeet;
+            })
+            // {
+              meta = metaCommon "run release optimized build";
+            };
+          yeet-dev =
+            (inputs.flake-utils.lib.mkApp {
+              drv = yeet-dev;
+            })
+            // {
+              meta = metaCommon "run dev/debug optimized build";
+            };
           # Makes updating everything at once a bit easier.
           # nix run .#update
           update = {
@@ -566,20 +592,48 @@
                 '';
               }
             }/bin/update";
+            meta = {
+              description = "Update flake inputs and cargo dependencies";
+              mainProgram = "update";
+            };
           };
         }
         // lib.optionalAttrs pkgs.stdenv.isLinux {
-          yeet-release = inputs.flake-utils.lib.mkApp {
-            drv = yeet-release-linux;
-          };
-          yeet-release-windows = inputs.flake-utils.lib.mkApp {
-            drv = yeet-release-windows;
-          };
+          yeet-release =
+            (inputs.flake-utils.lib.mkApp {
+              drv = yeet-release-linux;
+            })
+            // {
+              meta = metaCommon "run release static musl based linux build" // {
+                platforms = [
+                  "x86_64-linux"
+                  "aarch64-linux"
+                ];
+              };
+            };
+          yeet-release-windows =
+            (inputs.flake-utils.lib.mkApp {
+              drv = yeet-release-windows;
+            })
+            // {
+              # TODO: is this yeet.exe as the main program? Maybe I can test
+              # this out via wine?
+              meta = metaCommon "run release cross compiled windows build";
+            };
         }
         // lib.optionalAttrs pkgs.stdenv.isDarwin {
-          yeet-release = inputs.flake-utils.lib.mkApp {
-            drv = yeet-release-darwin;
-          };
+          yeet-release =
+            (inputs.flake-utils.lib.mkApp {
+              drv = yeet-release-darwin;
+            })
+            // {
+              meta = metaCommon "run release portable macos build" // {
+                platforms = [
+                  "x86_64-darwin"
+                  "aarch64-darwin"
+                ];
+              };
+            };
         };
 
         devShells.default = craneLib.devShell {
