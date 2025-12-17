@@ -93,17 +93,17 @@ fn debug_hack(
     if len > 0 {
         trace!("active copies: {}", len);
         for (_entity, _lhs, _rhs, _uuid, _marker, progress) in &query {
-            if let Some(progress) = progress {
-                if progress.files_found > 0 || progress.files_written > 0 {
-                    trace!(
-                        "  progress: {}/{} files, {}/{} dirs, {:.1}% complete",
-                        progress.files_written,
-                        progress.files_found,
-                        progress.dirs_written,
-                        progress.dirs_found,
-                        progress.completion_percent
-                    );
-                }
+            if let Some(progress) = progress
+                && (progress.files_found > 0 || progress.files_written > 0)
+            {
+                trace!(
+                    "  progress: {}/{} files, {}/{} dirs, {:.1}% complete",
+                    progress.files_written,
+                    progress.files_found,
+                    progress.dirs_written,
+                    progress.dirs_found,
+                    progress.completion_percent
+                );
             }
         }
     }

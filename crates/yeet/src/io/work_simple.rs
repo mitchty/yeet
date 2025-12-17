@@ -28,12 +28,10 @@ impl SimpleWorkQueue {
         match &item {
             WorkItem::DirectoryScanned { .. } => {
                 // Ignore sentinels - not needed for simple queue
-                return;
             }
             WorkItem::ScanComplete { .. } => {
                 self.scan_complete = true;
                 tracing::debug!("scan complete: {} items received", self.total_received);
-                return;
             }
             _ => {
                 self.total_received += 1;

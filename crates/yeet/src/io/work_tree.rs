@@ -112,10 +112,7 @@ impl TreeWorkQueue {
                         .unwrap_or_default(),
                     parent.display()
                 );
-                self.blocked_on_parent
-                    .entry(parent)
-                    .or_insert_with(Vec::new)
-                    .push(item);
+                self.blocked_on_parent.entry(parent).or_default().push(item);
             } else {
                 // No parent (root) - always ready
                 self.enqueue_ready(item);
@@ -178,7 +175,7 @@ impl TreeWorkQueue {
                     if let Some(parent) = child.parent_path() {
                         self.blocked_on_parent
                             .entry(parent)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(child);
                     }
                 }

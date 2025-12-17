@@ -168,6 +168,8 @@ impl ReaderPool {
 
     /// Traverse a directory using blocking I/O (std::fs)
     /// Much faster than async I/O for scanning that spent too much time in mutex bs
+    // TODO: I'll fix it in post/add a struct later...
+    #[allow(clippy::too_many_arguments)]
     fn traverse_directory_blocking(
         &self,
         source_path: PathBuf,

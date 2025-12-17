@@ -176,7 +176,7 @@ impl IoSubsystem {
         let has_work = self
             .progress
             .get(uuid)
-            .map_or(false, |p| p.files_found > 0 || p.dirs_found > 0);
+            .is_some_and(|p| p.files_found > 0 || p.dirs_found > 0);
 
         reader_complete && writer_complete && has_work
     }

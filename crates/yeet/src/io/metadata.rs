@@ -11,7 +11,7 @@ use std::path::PathBuf;
 //
 // This is a "future mitch" task for sure.
 /// File kind enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FileKind {
     /// Regular file
     File,
@@ -26,13 +26,8 @@ pub enum FileKind {
     /// Special files e.g. FIFO, socket, device, etc.
     Special,
     /// Unknown kind of file, will not be synced
+    #[default]
     Unknown,
-}
-
-impl Default for FileKind {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// File metadata captured during directory traversal

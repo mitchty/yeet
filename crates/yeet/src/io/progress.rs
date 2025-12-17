@@ -212,7 +212,7 @@ impl OperationProgress {
 /// Future me fix it.
 #[derive(Debug, Clone)]
 pub struct Progress {
-    /// Progress tracking per UUID using Arc<AtomicOperationProgress>
+    /// Progress tracking per UUID using `Arc<AtomicOperationProgress>`
     /// Mutex only guards the HashMap, not the atomic counters
     operations: Arc<parking_lot::Mutex<HashMap<u128, Arc<AtomicOperationProgress>>>>,
 }

@@ -243,6 +243,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_sysinfo_process_finds_current_pid() {
         let mut sys = sysinfo::System::new();
         sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
@@ -257,9 +258,12 @@ mod tests {
         if let Some(p) = sys.process(pid) {
             assert!(p.memory() > 0);
         }
+
+        // This is here to be sure sysinfo works, yes its a constant but it
+        // should always be true, note the allow clippy above.
         assert!(sysinfo::IS_SUPPORTED_SYSTEM);
 
-        // If we got here, we successfully found the process
+        // If we got here, we successfully found the process... I think
         assert!(sys.process(pid).is_some());
     }
 

@@ -391,14 +391,14 @@ impl WriterPool {
         // Ensure parent directory exists
         // Normally the reader queues CreateDir before files, but this is a safety net
         // in case work items are processed out of order by different workers
-        if let Some(parent) = dest_path.parent() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                let error_msg = format!("failed to create parent directory: {}", e);
-                tracing::error!("{}: {}", error_msg, parent.display());
-                let mut errors = self.errors.lock().await;
-                errors.push(IoError::destination(error_msg, parent.to_path_buf()));
-                return Err(Box::new(e));
-            }
+        if let Some(parent) = dest_path.parent()
+            && let Err(e) = tokio::fs::create_dir_all(parent).await
+        {
+            let error_msg = format!("failed to create parent directory: {}", e);
+            tracing::error!("{}: {}", error_msg, parent.display());
+            let mut errors = self.errors.lock().await;
+            errors.push(IoError::destination(error_msg, parent.to_path_buf()));
+            return Err(Box::new(e));
         }
 
         tracing::trace!(
@@ -543,7 +543,7 @@ impl WriterPool {
         let bytes_copied = match copy_result {
             Ok(Ok(bytes)) => bytes,
             Ok(Err(e)) => return Err(e),
-            Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+            Err(e) => return Err(std::io::Error::other(e)),
         };
 
         // copy should be done by here cancel the task
@@ -568,14 +568,14 @@ impl WriterPool {
         let dest_path = self.dest.join(&relative_path);
 
         // Ensure parent directory exists
-        if let Some(parent) = dest_path.parent() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                let error_msg = format!("failed to create parentage for symlink: {}", e);
-                tracing::error!("{}: {}", error_msg, parent.display());
-                let mut errors = self.errors.lock().await;
-                errors.push(IoError::destination(error_msg, parent.to_path_buf()));
-                return Err(Box::new(e));
-            }
+        if let Some(parent) = dest_path.parent()
+            && let Err(e) = tokio::fs::create_dir_all(parent).await
+        {
+            let error_msg = format!("failed to create parentage for symlink: {}", e);
+            tracing::error!("{}: {}", error_msg, parent.display());
+            let mut errors = self.errors.lock().await;
+            errors.push(IoError::destination(error_msg, parent.to_path_buf()));
+            return Err(Box::new(e));
         }
 
         tracing::trace!(

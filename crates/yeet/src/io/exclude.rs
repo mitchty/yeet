@@ -48,20 +48,20 @@ impl ExcludeRules {
     /// unlikely we ever managed to traverse stuff like .fsenventsd but WHO
     /// KNOWS maybe we're running as root and in a weird spot)
     pub fn should_exclude_dir_path(&self, path: &Path) -> bool {
-        if let Some(file_name) = path.file_name() {
-            if let Some(name_str) = file_name.to_str() {
-                return self.should_exclude_dir(name_str);
-            }
+        if let Some(file_name) = path.file_name()
+            && let Some(name_str) = file_name.to_str()
+        {
+            return self.should_exclude_dir(name_str);
         }
         false
     }
 
     /// Check if a file should be excluded by name.
     pub fn should_exclude_file_path(&self, path: &Path) -> bool {
-        if let Some(file_name) = path.file_name() {
-            if let Some(name_str) = file_name.to_str() {
-                return self.should_exclude_file(name_str);
-            }
+        if let Some(file_name) = path.file_name()
+            && let Some(name_str) = file_name.to_str()
+        {
+            return self.should_exclude_file(name_str);
         }
         false
     }
