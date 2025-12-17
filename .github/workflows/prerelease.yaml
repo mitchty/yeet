@@ -161,6 +161,7 @@ jobs:
           ---
           **Note:** These are pre-release builds from the main development branch and may be broken. Don't depend on them to always be correct or backwards compatible." \
             --prerelease \
+            --draft \
             release/yeet-linux-x86_64 \
             release/yeet-windows-x86_64.exe \
             release/yeet-darwin-aarch64
