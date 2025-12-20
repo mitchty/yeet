@@ -11,6 +11,11 @@
     fenix.url = "github:nix-community/fenix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
 
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -119,13 +124,18 @@
           ]
         );
 
-        # Constrained src fileset to ensure that cargo deps aren't rebuilt every change to crates.
+        # Constrained src fileset to ensure that cargo deps aren't rebuilt every
+        # change to crates.
+        #
+        # Mostly just here to be sure that build.rs using tonic notices proto
+        # files and anything that affects dependencies for cargo directly.
         srcDeps = lib.fileset.toSource {
           root = ./.;
           fileset = lib.fileset.unions [
             ./Cargo.lock
             ./Cargo.toml
             (lib.fileset.fileFilter (file: file.hasExt "toml") ./crates)
+            (lib.fileset.fileFilter (file: file.hasExt "proto") ./crates)
             # build.rs is needed if I make changes to it that will affect deps+build time deps
             (lib.fileset.fileFilter (file: file.name == "build.rs") ./crates)
           ];
@@ -145,6 +155,9 @@
         treefmtEval = inputs.treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
+            # Because I keep on forgetting, the rfc style formatter is the
+            # default for at least year now.. ref:
+            # https://github.com/numtide/treefmt-nix/blob/main/programs/nixfmt-rfc-style.nix
             nixfmt.enable = true;
             rustfmt = {
               enable = true;
@@ -159,6 +172,57 @@
               "-fix"
             ];
             includes = [ "*.proto" ];
+          };
+        };
+
+        # TOO MANY DAM LAYERS OF SHENANIGANS
+        #
+        # So... because the hooks are their own derivation, need to be sure crap
+        # like treefmt has all the formatters it needs in its derivation PATH
+        # too.
+        #
+        # These tools are made available in the hook environment's PATH
+        #
+        # These things are common between the hook derivation setup and used for the devShell
+        hookTools = with pkgs; {
+          inherit
+            # Formatters needed by treefmt
+            taplo
+            nixfmt-rfc-style
+            rustfmt
+            protolint
+            # Build tools needed by nix flake check
+            git
+            protobuf
+            grpcurl
+            # Nix itself for running checks
+            nix
+            # treefmt itself
+            treefmt
+            ;
+        };
+
+        # Instead of running nix flake check on each commit (e.g. in
+        # pre-commit), lets just be sure we're golden at push time.
+        #
+        # I can rewrite the commit history to fix it at that point if things
+        # fail or not.
+        git-hooks-check = inputs.git-hooks.lib.${system}.run {
+          src = ./.;
+          tools = hookTools;
+          hooks = {
+            nix-flake-check = {
+              enable = true;
+              name = "nix-flake-check";
+              entry = "${pkgs.nix}/bin/nix flake check -L";
+              language = "system";
+              pass_filenames = false;
+              stages = [ "pre-push" ];
+            };
+            # Make sure code is formatted in pre-commit
+            # Note: We use the formatter check separately, so we disable this
+            # in the git-hooks check to avoid sandbox timestamp issues
+            treefmt.enable = false;
           };
         };
 
@@ -251,7 +315,17 @@
         # so we can reuse all of that work (e.g. via cachix) when running in CI
         # It is *highly* recommended to use something like cargo-hakari to avoid
         # cache misses when building individual top-level-crates
-        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { src = srcDeps; });
+        # Note: buildDepsOnly already uses --all-targets by default
+        # Important: Must use same env vars (especially RUSTFLAGS) as actual builds
+        # Using dev profile by default for better debug info on panics
+        cargoArtifacts = craneLib.buildDepsOnly (
+          commonArgs
+          // nixEnvArgs
+          // devArgs
+          // {
+            src = srcDeps;
+          }
+        );
 
         # Cargo artifacts for musl builds
         cargoArtifactsMusl = craneLibMusl.buildDepsOnly (
@@ -317,7 +391,7 @@
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
           OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include/";
-          RUSTFLAGS = "-Aclippy::uninlined_format_args ";
+          # Clippy lints can be set in source via attributes instead
         };
 
         devArgs = {
@@ -337,20 +411,24 @@
         # Note that the cargo workspace must define `workspace.members` using wildcards,
         # otherwise, omitting a crate (like we do below) will result in errors since
         # cargo won't be able to find the sources for all members.
+
+        # Default build: dev profile with debug symbols to match cargo parlance
         yeet = craneLib.buildPackage (
           individualCrateArgs
           // nixEnvArgs
-          // releaseArgs
+          // devArgs
           // {
             pname = "yeet";
             cargoExtraArgs = "-p yeet";
             src = fileSetForCrate ./crates/yeet;
           }
         );
-        yeet-dev = craneLib.buildPackage (
+
+        # Optimized LTO build with release profile
+        yeet-lto = craneLib.buildPackage (
           individualCrateArgs
           // nixEnvArgs
-          // devArgs
+          // releaseArgs
           // {
             pname = "yeet";
             cargoExtraArgs = "-p yeet";
@@ -453,6 +531,7 @@
       {
         checks = {
           formatter = treefmtEval.config.build.check self;
+          git-hooks = git-hooks-check;
           # Build the crates as part of `nix flake check` for convenience
           inherit yeet;
 
@@ -465,6 +544,7 @@
           yeet-clippy = craneLib.cargoClippy (
             commonArgs
             // nixEnvArgs
+            // devArgs
             // {
               inherit cargoArtifacts;
               cargoClippyExtraArgs = "--all-targets -- --deny warnings";
@@ -474,6 +554,7 @@
           yeet-doc = craneLib.cargoDoc (
             commonArgs
             // nixEnvArgs
+            // devArgs
             // {
               inherit cargoArtifacts;
               # This can be commented out or tweaked as necessary, e.g. set to
@@ -495,6 +576,7 @@
           yeet-nextest = craneLib.cargoNextest (
             commonArgs
             // nixEnvArgs
+            // devArgs
             // {
               inherit cargoArtifacts;
               partitions = 1;
@@ -524,7 +606,7 @@
                 in
                 {
                   name = "yeet-int-${namePart}";
-                  value = pkgs.callPackage (./nix + "/${file}") { inherit yeet-dev; };
+                  value = pkgs.callPackage (./nix + "/${file}") { inherit yeet; };
                 }
               ) integrationTestFiles
             );
@@ -547,12 +629,19 @@
         );
 
         packages = {
-          inherit yeet yeet-dev;
-          default = yeet-dev;
+          inherit yeet yeet-lto;
+          default = yeet;
+          # Expose checks as packages for individual running with shorter names
+          clippy = self.checks.${system}.yeet-clippy;
+          doc = self.checks.${system}.yeet-doc;
+          nextest = self.checks.${system}.yeet-nextest;
         }
         // lib.optionalAttrs pkgs.stdenv.isLinux {
           yeet-release = yeet-release-linux;
           inherit yeet-release-windows;
+          # Make it slightly easier to run the integration nixos vm test suite
+          # cause I'm a lazy goober.
+          int = self.checks.${system}.yeet-integration-all;
         }
         // lib.optionalAttrs pkgs.stdenv.isDarwin {
           yeet-release = yeet-release-darwin;
@@ -564,14 +653,14 @@
               drv = yeet;
             })
             // {
-              meta = metaCommon "run release optimized build";
+              meta = metaCommon "Dev build";
             };
-          yeet-dev =
+          yeet-lto =
             (inputs.flake-utils.lib.mkApp {
-              drv = yeet-dev;
+              drv = yeet-lto;
             })
             // {
-              meta = metaCommon "run dev/debug optimized build";
+              meta = metaCommon "LTO optimized build";
             };
           # Makes updating everything at once a bit easier.
           # nix run .#update
@@ -598,6 +687,9 @@
             };
           };
         }
+        # Note its a bit jank but I'm using yeet-release for github action build
+        # targets, -release in this parlance isn't cargo build --release its
+        # "build release binaries for a commit/tag/version"
         // lib.optionalAttrs pkgs.stdenv.isLinux {
           yeet-release =
             (inputs.flake-utils.lib.mkApp {
@@ -642,6 +734,10 @@
           packages = (
             with pkgs;
             [
+              # This craps all the random stuff I include in the devShell that
+              # isn't really a part of the actual binary or anything. Aka
+              # grpcurl is there so I can poke at yeet with grpc slightly
+              # easier.
               adrs
               cargo-bloat
               cargo-edit
@@ -651,19 +747,24 @@
               grpcui
               grpcurl
               nil
-              nixfmt-rfc-style
               pandoc
               protobuf
-              taplo
-              treefmt
               protolint
+              stableRust
             ]
+            ++ (lib.attrValues hookTools)
             ++ commonArgs.buildInputs
             ++ commonArgs.nativeBuildInputs
             ++ lib.optionals pkgs.stdenv.isDarwin [
+              # I should probably remove this it was a hacky way to debug.
               pkgs.apple-sdk-test
             ]
           );
+
+          # Install git hooks when entering the dev shell
+          shellHook = ''
+            ${git-hooks-check.shellHook}
+          '';
 
           # Make sure eglot+etc.. pick the right rust-src for eglot+lsp mode stuff using direnv
           RUST_SRC_PATH = "${stableRust}/lib/rustlib/src/rust/library";

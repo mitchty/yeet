@@ -1,4 +1,4 @@
-{ pkgs, yeet-dev }:
+{ pkgs, yeet }:
 let
   yeetModule = import ./module.nix;
 in
@@ -10,11 +10,11 @@ pkgs.testers.runNixOSTest {
     {
       imports = [ yeetModule ];
 
-      environment.systemPackages = [ yeet-dev ];
+      environment.systemPackages = [ yeet ];
 
       services.yeet = {
         enable = true;
-        package = yeet-dev;
+        package = yeet;
       };
     };
 

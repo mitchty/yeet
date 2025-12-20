@@ -1,6 +1,6 @@
 {
   pkgs,
-  yeet-dev,
+  yeet,
 }:
 let
   testPrivateKey = builtins.readFile ./yeet_ssh_sut_key;
@@ -18,11 +18,11 @@ pkgs.testers.runNixOSTest {
       {
         imports = [ yeetModule ];
 
-        environment.systemPackages = [ yeet-dev ];
+        environment.systemPackages = [ yeet ];
 
         services.yeet = {
           enable = true;
-          package = yeet-dev;
+          package = yeet;
         };
 
         services.openssh = {
@@ -50,11 +50,11 @@ pkgs.testers.runNixOSTest {
       {
         imports = [ yeetModule ];
 
-        environment.systemPackages = [ yeet-dev ];
+        environment.systemPackages = [ yeet ];
 
         services.yeet = {
           enable = true;
-          package = yeet-dev;
+          package = yeet;
         };
 
         services.openssh = {
@@ -168,6 +168,11 @@ pkgs.testers.runNixOSTest {
     node2_restarts_final = node2.succeed("systemctl show yeet.service -p NRestarts --value").strip()
     assert node1_restarts_final == "0", f"node1 daemon crashed during test ({node1_restarts_final} restarts)"
     assert node2_restarts_final == "0", f"node2 daemon crashed during test ({node2_restarts_final} restarts)"
+
+    # Test heartbeat from node1 to node2 over ssh works and back
+    # I had some wip stuff I committed ignore this for now in this test
+    # node1.succeed(f"yeet sut heartbeat {node2_ip}")
+    # node2.succeed(f"yeet sut heartbeat {node1_ip}")
 
     print("simple two node smoketest passed, hopefully all is well")
   '';
