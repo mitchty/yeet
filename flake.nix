@@ -65,9 +65,12 @@
           cargoHash = "sha256-D19gYeI/cNESpCS5D9p7uf/PSC8Wdp3K5/3grn19qwI=";
 
           nativeBuildInputs = with pkgs; [ pkg-config ];
-          buildInputs = with pkgs; [
-            openssl
-          ] ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk ];
+          buildInputs =
+            with pkgs;
+            [
+              openssl
+            ]
+            ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk ];
 
           doCheck = false;
 
