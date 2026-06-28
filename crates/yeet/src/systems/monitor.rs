@@ -54,7 +54,7 @@ fn cleanup_on_exit(mut exit_reader: MessageReader<bevy::app::AppExit>) {
     }
 }
 
-use ansi_term::Style;
+use nu_ansi_term::Style;
 
 struct StyleManager {
     enabled: bool,
@@ -130,12 +130,12 @@ fn update_display(
                 "daemon stats: up: {} mem: {} cpu: {:.1}%{nl}",
                 uptime_fmt, memory, **cpu
             ),
-            ansi_term::Style::default().bold(),
+            nu_ansi_term::Style::default().bold(),
         ));
     } else {
         output.push_str(&manager.apply(
             &format!("daemon stats not available?{nl}"),
-            ansi_term::Style::default(),
+            nu_ansi_term::Style::default(),
         ));
     }
 
@@ -157,24 +157,24 @@ fn update_display(
     if total == 0 {
         output.push_str(&manager.apply(
             &format!("no syncs{nl}"),
-            ansi_term::Style::default().fg(ansi_term::Colour::Yellow),
+            nu_ansi_term::Style::default().fg(nu_ansi_term::Color::Yellow),
         ));
     } else {
         if in_progress.is_empty() {
             output.push_str(&manager.apply(
                 &format!("no active syncs{nl}"),
-                ansi_term::Style::default().fg(ansi_term::Colour::Yellow),
+                nu_ansi_term::Style::default().fg(nu_ansi_term::Color::Yellow),
             ));
         } else {
             output.push_str(&manager.apply(
                 &format!("active syncs: {}{nl}", in_progress.len()),
-                ansi_term::Style::default().fg(ansi_term::Colour::Green),
+                nu_ansi_term::Style::default().fg(nu_ansi_term::Color::Green),
             ));
         }
         if !completed.is_empty() {
             output.push_str(&manager.apply(
                 &format!("completed syncs: {}{nl}", completed.len()),
-                ansi_term::Style::default().fg(ansi_term::Colour::Green),
+                nu_ansi_term::Style::default().fg(nu_ansi_term::Color::Green),
             ));
         }
 
@@ -197,7 +197,7 @@ fn update_display(
 
             // output.push_str(&manager.apply(
             //     "in progress",
-            //     ansi_term::Style::default().fg(ansi_term::Colour::Green),
+            //     nu_ansi_term::Style::default().fg(nu_ansi_term::Color::Green),
             // ));
 
             // Add progress information if available
@@ -256,14 +256,14 @@ fn update_display(
 
             output.push_str(&manager.apply(
                 &format!(
-                    " {}{nl} {}{nl}   {} → {} {}{nl}",
+                    " {}{nl} {}{nl}   {} -> {} {}{nl}",
                     uuid_str,
                     progress_str,
                     source.0.display(),
                     dest.0.display(),
                     running_for
                 ),
-                ansi_term::Style::default(),
+                nu_ansi_term::Style::default(),
             ));
         }
 
@@ -294,20 +294,20 @@ fn update_display(
                 String::new()
             };
 
-            output.push_str(&manager.apply("completed", ansi_term::Style::default()));
+            output.push_str(&manager.apply("completed", nu_ansi_term::Style::default()));
             output.push_str(&manager.apply(
                 &format!(
-                    " {}: {} {} → {} {}{nl}",
+                    " {}: {} {} -> {} {}{nl}",
                     time_ago,
                     duration_str,
                     source.0.display(),
                     dest.0.display(),
                     uuid_str,
                 ),
-                ansi_term::Style::default(),
+                nu_ansi_term::Style::default(),
             ));
         }
     }
-    output.push_str(&manager.apply("", ansi_term::Style::default()));
+    output.push_str(&manager.apply("", nu_ansi_term::Style::default()));
     tracing_indicatif::indicatif_println!("{nl}{}", output);
 }

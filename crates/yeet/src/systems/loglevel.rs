@@ -1,4 +1,5 @@
 use log::Level;
+use std::io::IsTerminal;
 use std::sync::{Arc, OnceLock};
 
 use bevy::prelude::*;
@@ -31,7 +32,7 @@ pub struct LogLevelPlugin {
 impl Plugin for LogLevelPlugin {
     fn build(&self, app: &mut App) {
         // Only enable raw mode if we're actually running in a TTY
-        let is_tty = atty::is(atty::Stream::Stdout);
+        let is_tty = std::io::stdout().is_terminal();
 
         if is_tty {
             // Yeeted from https://werat.dev/blog/pretty-rust-backtraces-in-raw-terminal-mode/ need to brain a more long term approach here.

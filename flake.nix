@@ -27,6 +27,58 @@
     inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
+        pugio = pkgs.rustPlatform.buildRustPackage rec {
+          pname = "pugio";
+          version = "0.2.0";
+
+          src = pkgs.fetchCrate {
+            inherit pname version;
+            hash = "sha256-Eqc6Ferh5AUstigkLPRhf+xAZXFH3AEfaVjvlaPAJ/8=";
+          };
+
+          cargoHash = "sha256-RC5dPLuA32VTLk2GVFnjJ+ijl64+HYHWY6pYrIUk0Rw=";
+
+          nativeBuildInputs = with pkgs; [ pkg-config ];
+          buildInputs = with pkgs; [ ] ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk ];
+
+          doCheck = false;
+
+          meta = with lib; {
+            description = "Binary size profiler for ELF, Mach-O, PE, and WASM binaries";
+            mainProgram = "pugio";
+            homepage = "https://github.com/Gnarus-G/pugio";
+            license = with licenses; [ mit ];
+          };
+        };
+
+        cargo-size = pkgs.rustPlatform.buildRustPackage rec {
+          pname = "cargo-size";
+          version = "unstable-2024-09-02";
+
+          src = pkgs.fetchFromGitHub {
+            owner = "abhinav-1305";
+            repo = "cargo-size";
+            rev = "889ba6cd674d306bced08e73471df24756c1a580";
+            hash = "sha256-x51wqyVGu3sy4veLwZ7IRkmISAh9aGUIu8iMmf0iw3U=";
+          };
+
+          cargoHash = "sha256-D19gYeI/cNESpCS5D9p7uf/PSC8Wdp3K5/3grn19qwI=";
+
+          nativeBuildInputs = with pkgs; [ pkg-config ];
+          buildInputs = with pkgs; [
+            openssl
+          ] ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk ];
+
+          doCheck = false;
+
+          meta = with lib; {
+            description = "Find out what takes most of the space in your executable";
+            mainProgram = "cargo-size";
+            homepage = "https://github.com/abhinav-1305/cargo-size";
+            license = with licenses; [ mit ];
+          };
+        };
+
         # DRY some of the meta definitions for apps/packages for this chungus amungus
         metaCommon = desc: {
           description = if desc == "" then "yeet" else "yeet " + desc;
@@ -747,6 +799,9 @@
               grpcui
               grpcurl
               nil
+              pugio
+              cargo-size
+              graphviz
               pandoc
               protobuf
               protolint

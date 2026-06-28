@@ -15,6 +15,7 @@
 use bevy::{app::AppExit, input::ButtonInput, prelude::*};
 use crossbeam_channel::{Receiver, bounded};
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::io::IsTerminal;
 use std::thread;
 use std::time::Duration;
 
@@ -25,7 +26,7 @@ pub struct StdinPlugin;
 impl Drop for StdinPlugin {
     fn drop(&mut self) {
         // We only disable raw mode if we're in a tty terminal not daemon context
-        if atty::is(atty::Stream::Stdin) {
+        if std::io::stdin().is_terminal() {
             let _ = crossterm::terminal::disable_raw_mode();
         }
     }
@@ -39,7 +40,7 @@ struct StreamReceiver(Receiver<StdinEvent>);
 
 impl Plugin for StdinPlugin {
     fn build(&self, app: &mut App) {
-        let is_tty = atty::is(atty::Stream::Stdin);
+        let is_tty = std::io::stdin().is_terminal();
 
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(ButtonInput::<KeyModifiers>::default());
@@ -58,7 +59,7 @@ fn setup(mut commands: Commands) {
     commands.insert_resource(StreamReceiver(rx));
 
     // Raw mode is necessary to read key events without waiting for Enter
-    if !atty::is(atty::Stream::Stdin) {
+    if !std::io::stdin().is_terminal() {
         warn!("setup called without TTY - skipping raw mode, possible bug?");
         return;
     }
