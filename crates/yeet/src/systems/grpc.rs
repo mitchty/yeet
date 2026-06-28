@@ -142,6 +142,9 @@ fn handle_rpc_event(
                     let _ = handle.set_max_level(String::from(set_level));
                 }
             }
+            RpcEvent::Heartbeat { .. } => {
+                debug!("heartbeat event received (handled by heartbeat system)");
+            }
         }
     }
 }

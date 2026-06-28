@@ -55,6 +55,11 @@ pub enum RpcEvent {
     LogLevel {
         level: crate::rpc::loglevel::Level,
     },
+    Heartbeat {
+        target: String,
+        #[allow(clippy::type_complexity)]
+        response_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<(bool, String)>>>>,
+    },
 }
 
 use std::sync::{Arc, Mutex};

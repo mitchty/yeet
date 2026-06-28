@@ -3,6 +3,7 @@
 // code its normal and I'm sick of annotating each system function.
 pub mod build;
 pub mod grpc;
+pub mod heartbeat;
 pub mod inode;
 pub mod io_bridge;
 pub mod loglevel;

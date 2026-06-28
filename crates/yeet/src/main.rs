@@ -217,11 +217,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             verbose: _verbose,
             ticks,
         } => {
-            let app = appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
-                Duration::from_secs_f64(1.0 / ticks as f64),
-            )));
+            if ticks > 0 {
+                appbinding.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
+                    Duration::from_secs_f64(1.0 / ticks as f64),
+                )));
+            } else {
+                appbinding.add_plugins(MinimalPlugins);
+            }
 
-            app.add_plugins((
+            appbinding.add_plugins((
                 lib::systems::loglevel::LogLevelPlugin {
                     level: Level::Trace,
                 },
@@ -244,7 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 lib::systems::grpc::GrpcPlugin,
                 lib::systems::netcode::server::LightYearServerPlugin,
             ));
-            app.add_systems(Update, toggle_logging_level_debug);
+            appbinding.add_systems(Update, toggle_logging_level_debug);
         }
         SubCommands::Monitor { host: _, ticks } => {
             setup_ctrlc_handler();

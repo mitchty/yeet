@@ -74,4 +74,46 @@ impl Yeet for MyYeet {
 
         Ok(Response::new(reply))
     }
+
+    async fn heartbeat(
+        &self,
+        request: Request<HeartbeatRequest>,
+    ) -> Result<Response<HeartbeatReply>, Status> {
+        use std::sync::{Arc, Mutex};
+
+        debug!("Got a heartbeat request: {:?}", request);
+
+        let target = request.into_inner().target;
+
+        // Create a oneshot channel to receive the response from the ECS
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        // Send event to ECS for processing
+        {
+            let s = self
+                .event_sender
+                .lock()
+                .expect("could not lock event sender");
+
+            let _ = s.send(RpcEvent::Heartbeat {
+                target: target.clone(),
+                response_tx: Arc::new(Mutex::new(Some(response_tx))),
+            });
+        } // Lock is dropped here before await
+
+        // Wait for ECS to process and respond (with timeout)
+        let (success, message) =
+            match tokio::time::timeout(std::time::Duration::from_secs(30), response_rx).await {
+                Ok(Ok((success, message))) => (success, message),
+                Ok(Err(_)) => (false, "Internal error: response channel closed".to_string()),
+                Err(_) => (
+                    false,
+                    format!("Timeout waiting for heartbeat to {}", target),
+                ),
+            };
+
+        let reply = HeartbeatReply { success, message };
+
+        Ok(Response::new(reply))
+    }
 }

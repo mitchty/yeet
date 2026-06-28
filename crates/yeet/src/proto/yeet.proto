@@ -3,6 +3,7 @@ package yeet;
 
 service Yeet {
   rpc SimpleCopy (SyncSimpleCopyRequest) returns (SyncSimpleCopyReply);
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatReply);
 }
 
 message SyncSimpleCopyRequest {
@@ -13,4 +14,13 @@ message SyncSimpleCopyRequest {
 
 message SyncSimpleCopyReply {
   string uuid = 1;
+}
+
+message HeartbeatRequest {
+  string target = 1;
+}
+
+message HeartbeatReply {
+  bool success = 1;
+  string message = 2;
 }
